@@ -1,0 +1,25 @@
+-- V1__base.sql : base mínima (departamentos, colaboradores)
+
+CREATE TABLE IF NOT EXISTS departamentos (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  nome VARCHAR(120) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_departamentos_nome (nome)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS colaboradores (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  nome VARCHAR(150) NOT NULL,
+  cpf VARCHAR(14) NOT NULL,
+  email VARCHAR(180) NOT NULL,
+  ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  cargo VARCHAR(120) NULL,
+  data_admissao DATE NOT NULL,
+  departamento_id BIGINT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_colab_depart FOREIGN KEY (departamento_id) REFERENCES departamentos(id),
+  UNIQUE KEY uk_colaboradores_cpf (cpf),
+  UNIQUE KEY uk_colaboradores_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

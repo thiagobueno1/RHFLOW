@@ -1,0 +1,9 @@
+ALTER TABLE registros_ponto
+  MODIFY COLUMN entrada_lat DOUBLE NULL,
+  MODIFY COLUMN entrada_lng DOUBLE NULL,
+  MODIFY COLUMN almoco_ini_lat DOUBLE NULL,
+  MODIFY COLUMN almoco_ini_lng DOUBLE NULL,
+  MODIFY COLUMN almoco_fim_lat DOUBLE NULL,
+  MODIFY COLUMN almoco_fim_lng DOUBLE NULL,
+  MODIFY COLUMN saida_lat DOUBLE NULL,
+  MODIFY COLUMN saida_lng DOUBLE NULL;
