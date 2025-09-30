@@ -3,6 +3,7 @@ package com.seuprojeto.rhapi.security;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -13,6 +14,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -29,8 +32,44 @@ public class SecurityConfig {
         this.jwtAuthFilter = jwtAuthFilter;
     }
 
+    /**
+     * CHAIN 0 — rotas públicas SEM JWT.
+     * Cobre:
+     *   - /public/** (sem context-path)
+     *   - /rh-api/public/** (se houver context-path /rh-api no deploy)
+     *   - /error e /favicon.ico para não exigir auth nesses caminhos
+     */
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    @Order(0)
+    public SecurityFilterChain publicChain(HttpSecurity http) throws Exception {
+        var publicMatcher = new OrRequestMatcher(
+                new AntPathRequestMatcher("/public/**"),
+                new AntPathRequestMatcher("/rh-api/public/**"),
+                new AntPathRequestMatcher("/error"),
+                new AntPathRequestMatcher("/favicon.ico")
+        );
+
+        http
+            .securityMatcher(publicMatcher)
+            .csrf(csrf -> csrf.disable())
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .exceptionHandling(ex -> ex.authenticationEntryPoint((req, res, e) ->
+                    res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized")))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .anyRequest().permitAll()
+            );
+        // Não adicionar JwtAuthFilter aqui.
+        return http.build();
+    }
+
+    /**
+     * CHAIN 1 — restante da API COM JWT.
+     */
+    @Bean
+    @Order(1)
+    public SecurityFilterChain apiChain(HttpSecurity http) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -38,35 +77,31 @@ public class SecurityConfig {
             .exceptionHandling(ex -> ex.authenticationEntryPoint((req, res, e) ->
                     res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized")))
             .authorizeHttpRequests(auth -> auth
-                    // 1) Sempre liberar OPTIONS (CORS pré-flight)
-                    .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                // Preflight CORS
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                    // 2) Páginas 100% públicas
-                    .requestMatchers(
-                            "/", "/index.html",
-                            "/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html",
-                            "/assets/**", "/webjars/**",
-                            // assinatura pública e quaisquer outras rotas abertas
-                            "/public/**"
-                    ).permitAll()
+                // Estáticos / docs
+                .requestMatchers(
+                        "/", "/index.html",
+                        "/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html",
+                        "/assets/**", "/webjars/**"
+                ).permitAll()
 
-                    // 3) Login é público
-                    .requestMatchers("/auth/login").permitAll()
+                // Login público
+                .requestMatchers("/auth/login").permitAll()
 
-                    // 4) Regras de negócio protegidas
-                    .requestMatchers(HttpMethod.POST, "/colaboradores/**").hasAnyRole("RH","ADMIN")
-                    .requestMatchers("/banco-horas/**").hasAnyRole("RH","ADMIN")
-                    .requestMatchers("/relatorios/email/**").hasAnyRole("RH","ADMIN")
+                // Regras protegidas
+                .requestMatchers(HttpMethod.POST, "/colaboradores/**").hasAnyRole("RH","ADMIN")
+                .requestMatchers("/banco-horas/**").hasAnyRole("RH","ADMIN")
+                .requestMatchers("/relatorios/email/**").hasAnyRole("RH","ADMIN")
+                .requestMatchers("/assinaturas/**").hasAnyRole("RH","ADMIN")
 
-                    // (somente rotas administrativas de assinatura; a página pública está em /public/**)
-                    .requestMatchers("/assinaturas/**").hasAnyRole("RH","ADMIN")
+                // Ponto
+                .requestMatchers(HttpMethod.POST, "/pontos/bater").hasAnyRole("COLABORADOR","GESTOR","ADMIN")
+                .requestMatchers(HttpMethod.GET, "/pontos/status-dia").authenticated()
 
-                    // Batida de ponto rápida + status do dia
-                    .requestMatchers(HttpMethod.POST, "/pontos/bater").hasAnyRole("COLABORADOR","GESTOR","ADMIN")
-                    .requestMatchers(HttpMethod.GET, "/pontos/status-dia").authenticated()
-
-                    // 5) Todo o resto precisa estar autenticado
-                    .anyRequest().authenticated()
+                // Demais exigem auth
+                .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

@@ -3,6 +3,7 @@ package com.seuprojeto.rhapi.controller;
 import com.seuprojeto.rhapi.domain.AssinaturaToken;
 import com.seuprojeto.rhapi.service.AssinaturaService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -16,12 +17,17 @@ public class AssinaturaController {
 
     private final AssinaturaService assinaturaService;
 
-    public AssinaturaController(AssinaturaService assinaturaService) {
+    // Use o host-base do application.properties (ex.: http://localhost:8080 ou http://localhost:8080/rh-api)
+    private final String hostBase;
+
+    public AssinaturaController(AssinaturaService assinaturaService,
+                                @Value("${app.host-base:http://localhost:8080}") String hostBase) {
         this.assinaturaService = assinaturaService;
+        this.hostBase = normalizeBase(hostBase);
     }
 
     /**
-     * Cria um token de assinatura para um colaborador e retorna o link para assinatura.
+     * Cria um token de assinatura para um colaborador e retorna o link público de assinatura.
      * Ex.: POST /assinaturas/criar?colaboradorId=1&de=2025-08-01&ate=2025-08-31&validadeHoras=72
      */
     @PostMapping("/criar")
@@ -31,24 +37,22 @@ public class AssinaturaController {
                                    @RequestParam(defaultValue = "72") int validadeHoras,
                                    HttpServletRequest req) {
 
-        // host base para montar link (ajuste se usar proxy/reverse-proxy em produção)
-        String hostBase = req.getScheme() + "://" + req.getServerName()
-                + ((req.getServerPort() == 80 || req.getServerPort() == 443) ? "" : ":" + req.getServerPort());
-
         AssinaturaToken t = assinaturaService.criarToken(colaboradorId, de, ate, validadeHoras, hostBase);
 
-        String link = hostBase + "/assinaturas/aceitar?token=" + t.getToken();
+        // Link CORRETO para a página pública (singular): /public/assinatura/{token}
+        String linkPublico = hostBase + "/public/assinatura/" + t.getToken();
+
         return ResponseEntity.ok(Map.of(
                 "token", t.getToken(),
                 "expiraEm", t.getExpiresAt(),
-                "link", link
+                "link", linkPublico
         ));
     }
 
     /**
-     * Página de aceite de assinatura (pública).
+     * (LEGADO) Página de aceite via query param. Mantida por compatibilidade.
+     * OBS: esta rota NÃO é pública; em produção prefira SEMPRE o link público /public/assinatura/{token}.
      * GET /assinaturas/aceitar?token=...
-     * Retorna um HTML simples de sucesso/erro.
      */
     @GetMapping("/aceitar")
     public ResponseEntity<String> aceitar(@RequestParam String token, HttpServletRequest req) {
@@ -89,17 +93,25 @@ public class AssinaturaController {
     }
 
     /**
-     * Consulta status de uma assinatura por token (público).
+     * Consulta status de uma assinatura por token (normalmente uso interno).
      * GET /assinaturas/status?token=...
      */
     @GetMapping("/status")
     public ResponseEntity<?> status(@RequestParam String token) {
-        // O service retorna um DTO/Map com informações do token (status, expiracao, etc.)
         var dto = assinaturaService.status(token);
         return ResponseEntity.ok(dto);
     }
 
+    // ===== helpers =====
+
     private static String firstNonBlank(String a, String b) {
         return (a != null && !a.isBlank()) ? a : (b != null ? b : "");
+    }
+
+    private static String normalizeBase(String base) {
+        if (base == null || base.isBlank()) return "http://localhost:8080";
+        base = base.trim();
+        if (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+        return base;
     }
 }

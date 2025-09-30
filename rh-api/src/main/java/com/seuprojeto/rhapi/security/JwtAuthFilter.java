@@ -29,12 +29,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
     // Rotas que não passam por autenticação
+    // Inclui a variante com context-path (/**/public/**) para funcionar mesmo se houver server.servlet.context-path.
     private static final String[] SKIP_PATHS = new String[] {
             "/", "/index.html",
             "/auth/login",
             "/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html",
             "/webjars/**", "/assets/**",
-            "/public/**" // página pública da assinatura, webhooks, etc.
+            "/public/**",        // sem context-path
+            "/**/public/**"      // com context-path, ex.: /rh-api/public/**
     };
 
     public JwtAuthFilter(JwtService jwtService) {
@@ -43,7 +45,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
-        String path = request.getRequestURI();
+        final String path = request.getRequestURI(); // inclui context-path
         for (String p : SKIP_PATHS) {
             if (pathMatcher.match(p, path)) {
                 return true; // pula totalmente o filtro nessas rotas
@@ -59,22 +61,23 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                                     @NonNull FilterChain filterChain)
             throws ServletException, IOException {
 
-        String header = request.getHeader("Authorization");
+        final String authHeader = request.getHeader("Authorization");
 
-        // Sem token? Não autentica e segue o fluxo. (Quem decide é o SecurityConfig)
-        if (header == null || !header.startsWith("Bearer ")) {
+        // Sem token? Não autentica e segue o fluxo (SecurityConfig decide o acesso).
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String token = header.substring(7);
+        final String jwt = authHeader.substring(7);
         try {
-            Jws<Claims> jws = jwtService.parse(token);
+            Jws<Claims> jws = jwtService.parse(jwt);
             Claims claims = jws.getBody();
-            String subject = claims.getSubject(); // normalmente e-mail
+            String subject = claims.getSubject(); // normalmente e-mail/username
+
             if (subject != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-                // tentamos obter o papel do token. Aceita "role" ou "papel".
+                // tenta obter o papel do token. Aceita "role" ou "papel".
                 String role = null;
                 Object roleObj = claims.get("role");
                 if (roleObj == null) roleObj = claims.get("papel");

@@ -37,7 +37,7 @@ public class RelatorioEmailService {
     }
 
     /**
-     * Envia o relatório mensal (HTML + CSV) e inclui botão/link para assinatura pública.
+     * Envia o relatório mensal (HTML + CSV) e inclui links/botões públicos de decisão (aceitar/recusar).
      * @param colaboradorId ID do colaborador
      * @param competencia YearMonth (ex.: 2025-09)
      * @param hostBase base do host para montar o link público (ex.: http://localhost:8080)
@@ -62,10 +62,14 @@ public class RelatorioEmailService {
         );
         int saldoFeriasDias = Math.max(0, diasDireito - (consumidosOuPendentes == null ? 0 : consumidosOuPendentes));
 
-        // Token de assinatura (72h de validade) e URL pública
-        String base = (hostBase != null && !hostBase.isBlank()) ? hostBase : "http://localhost:8080";
+        // Token de assinatura (72h de validade)
+        String base = normalizeHostBase(hostBase);
         AssinaturaToken t = assinaturaService.criarToken(colaboradorId, de, ate, 72, base);
-        String urlAssinatura = base + "/public/assinaturas/" + t.getToken();
+
+        // URLs PÚBLICAS (SINGULAR) — clique do e-mail já decide
+        String urlAceitar = base + "/public/assinatura/" + t.getToken() + "/decidir?acao=sim";
+        String urlRecusar = base + "/public/assinatura/" + t.getToken() + "/decidir?acao=nao";
+        String urlStatus  = base + "/public/assinatura/" + t.getToken();
 
         // Montar HTML
         String linhasTabela = montarLinhasTabela(extrato.dias());
@@ -131,12 +135,23 @@ public class RelatorioEmailService {
                         </div>
 
                         <div style="margin-top:18px; text-align:center">
-                          <a href="%s" style="display:inline-block; background:#2563eb; color:#fff; text-decoration:none; padding:12px 18px; border-radius:10px; font-weight:600">
-                            Assinar relatório
+                          <a href="%s"
+                             style="display:inline-block; background:#16a34a; color:#fff; text-decoration:none; padding:12px 18px; border-radius:10px; font-weight:600; margin-right:10px;">
+                            Estou de acordo
+                          </a>
+                          <a href="%s"
+                             style="display:inline-block; background:#dc2626; color:#fff; text-decoration:none; padding:12px 18px; border-radius:10px; font-weight:600;">
+                            Não estou de acordo
                           </a>
                           <p style="margin:10px 0 0 0; color:#666; font-size:12px">
                             O link expira em 72 horas.
                           </p>
+                          <div style="margin-top:10px; font-size:12px; color:#666; text-align:left; word-break:break-all;">
+                            <div><b>Links alternativos (caso os botões não funcionem):</b></div>
+                            <div>Aceitar: %s</div>
+                            <div>Recusar: %s</div>
+                            <div>Status: %s</div>
+                          </div>
                         </div>
 
                         <p style="margin:16px 0 6px 0; color:#666">Relatório em CSV anexado a este e-mail.</p>
@@ -156,7 +171,11 @@ public class RelatorioEmailService {
                 linhasTabela,
                 saldoPeriodoFmt,
                 saldoFeriasDias,
-                urlAssinatura
+                urlAceitar,
+                urlRecusar,
+                urlAceitar,
+                urlRecusar,
+                urlStatus
         );
 
         // CSV em anexo
@@ -165,7 +184,7 @@ public class RelatorioEmailService {
         // Assunto
         String subject = "Extrato Mensal — %s (%s)".formatted(nullSafe(c.getNome()), competencia);
 
-        // Enviar (em dev, se você usa spring.mail.to-override no EmailService, ele respeitará lá)
+        // Enviar
         emailService.sendHtmlWithAttachment(
                 c.getEmail(),
                 subject,
@@ -177,6 +196,12 @@ public class RelatorioEmailService {
     }
 
     /* ================== Helpers ================== */
+
+    private static String normalizeHostBase(String hostBase) {
+        String base = (hostBase != null && !hostBase.isBlank()) ? hostBase.trim() : "http://localhost:8080";
+        while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+        return base;
+    }
 
     private static String montarLinhasTabela(List<ExtratoDiaDTO> dias) {
         StringBuilder sb = new StringBuilder();

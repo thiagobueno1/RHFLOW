@@ -50,52 +50,73 @@ public class AssinaturaService {
         t.setStatus(AssinaturaStatus.PENDENTE);
         t.setExpiresAt(Instant.now().plus(validadeHoras, ChronoUnit.HOURS));
 
+        // >>> timestamps obrigatórios pelo schema (created_at / updated_at NOT NULL)
+        Instant now = Instant.now();
+        t.setCreatedAt(now);
+        t.setUpdatedAt(now);
+
         return tokenRepo.save(t);
     }
 
     /**
-     * Aceita/assina um token. Se estiver expirado, marca como EXPIRADO e retorna false.
-     * Se já estiver ASSINADO, retorna true (idempotente).
+     * Decide o token: aceita (true) ou recusa (false).
+     * - Marca EXPIRADO se já passou da validade e ainda não estava decidido.
+     * - Idempotente: se já ASSINADO/RECUSADO, apenas retorna.
      */
-    public boolean aceitar(String token, String ip, String ua) {
+    public AssinaturaToken decidir(String token, boolean aceita, String ip, String ua) {
         AssinaturaToken t = tokenRepo.findByToken(token)
                 .orElseThrow(() -> new IllegalArgumentException("Token inválido"));
 
-        // Expirado?
+        // Expirado -> se ainda não decidido, marca como EXPIRADO e retorna
         if (t.getExpiresAt() != null && Instant.now().isAfter(t.getExpiresAt())) {
-            if (t.getStatus() != AssinaturaStatus.EXPIRADO) {
+            if (t.getStatus() != AssinaturaStatus.ASSINADO
+                    && t.getStatus() != AssinaturaStatus.RECUSADO
+                    && t.getStatus() != AssinaturaStatus.EXPIRADO) {
                 t.setStatus(AssinaturaStatus.EXPIRADO);
-                tokenRepo.save(t);
+                t.setUpdatedAt(Instant.now()); // <<< manter updated_at consistente
+                t = tokenRepo.save(t);
             }
-            return false;
+            return t;
         }
 
-        // Já assinado? idempotente
-        if (t.getStatus() == AssinaturaStatus.ASSINADO) {
-            return true;
+        // Idempotência: se já decidiu (ASSINADO/RECUSADO), só retorna
+        if (t.getStatus() == AssinaturaStatus.ASSINADO || t.getStatus() == AssinaturaStatus.RECUSADO) {
+            return t;
         }
 
-        // Assina agora
-        t.setStatus(AssinaturaStatus.ASSINADO);
+        // Grava decisão agora
+        t.setStatus(aceita ? AssinaturaStatus.ASSINADO : AssinaturaStatus.RECUSADO);
         t.setSignedAt(Instant.now());
         t.setSignedIp(ip);
         t.setSignedUa(ua);
-        tokenRepo.save(t);
-        return true;
+        t.setUpdatedAt(Instant.now()); // <<< atualizar updated_at em qualquer mudança
+        return tokenRepo.save(t);
     }
 
     /**
-     * Retorna status do token para exibição no front/retorno do controller.
-     * Mapa simples para evitar criar novo DTO agora.
+     * Aceita/assina um token (retrocompatível com chamadas antigas).
+     * Se expirado e não decidido, marca como EXPIRADO e retorna false.
+     * Se já estiver ASSINADO, retorna true (idempotente).
+     */
+    public boolean aceitar(String token, String ip, String ua) {
+        AssinaturaToken t = decidir(token, true, ip, ua);
+        return t.getStatus() == AssinaturaStatus.ASSINADO;
+    }
+
+    /**
+     * Retorna status do token para exibição (sem criar DTO por enquanto).
      */
     public Map<String, Object> status(String token) {
         AssinaturaToken t = tokenRepo.findByToken(token)
                 .orElseThrow(() -> new IllegalArgumentException("Token inválido"));
 
         boolean expirado = t.getExpiresAt() != null && Instant.now().isAfter(t.getExpiresAt());
-        AssinaturaStatus statusEfetivo = expirado && t.getStatus() != AssinaturaStatus.ASSINADO
-                ? AssinaturaStatus.EXPIRADO
-                : t.getStatus();
+
+        // Se expirou e ainda não foi decidido, reporta como EXPIRADO; caso já tenha sido decidido, mantém o status.
+        AssinaturaStatus statusEfetivo =
+                (expirado && t.getStatus() != AssinaturaStatus.ASSINADO && t.getStatus() != AssinaturaStatus.RECUSADO)
+                        ? AssinaturaStatus.EXPIRADO
+                        : t.getStatus();
 
         return Map.of(
                 "token", t.getToken(),
