@@ -8,6 +8,7 @@ import java.util.Optional;
 public interface ColaboradorRepository extends JpaRepository<Colaborador, Long> {
     Optional<Colaborador> findByCpf(String cpf);
     Optional<Colaborador> findByEmailIgnoreCase(String email);
+    Optional<Colaborador> findByEmail(String email);
     boolean existsByPapel(Role papel);
     
 }

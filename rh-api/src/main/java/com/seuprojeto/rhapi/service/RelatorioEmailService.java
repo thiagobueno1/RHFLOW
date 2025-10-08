@@ -1,16 +1,18 @@
 package com.seuprojeto.rhapi.service;
 
-import com.seuprojeto.rhapi.domain.AssinaturaToken;
+import com.seuprojeto.rhapi.domain.AssinaturaMensal;
 import com.seuprojeto.rhapi.domain.Colaborador;
 import com.seuprojeto.rhapi.domain.enums.StatusFerias;
 import com.seuprojeto.rhapi.dto.ExtratoDiaDTO;
 import com.seuprojeto.rhapi.dto.ExtratoPeriodoDTO;
+import com.seuprojeto.rhapi.repository.AssinaturaMensalRepository;
 import com.seuprojeto.rhapi.repository.ColaboradorRepository;
 import com.seuprojeto.rhapi.repository.SolicitacaoFeriasRepository;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.Period;
 import java.time.YearMonth;
 import java.util.List;
@@ -22,25 +24,27 @@ public class RelatorioEmailService {
     private final BancoHorasService bancoHorasService;
     private final ColaboradorRepository colaboradorRepository;
     private final SolicitacaoFeriasRepository feriasRepository;
-    private final AssinaturaService assinaturaService;
+    private final AssinaturaMensalRepository assinaturaMensalRepository;
 
     public RelatorioEmailService(EmailService emailService,
                                  BancoHorasService bancoHorasService,
                                  ColaboradorRepository colaboradorRepository,
                                  SolicitacaoFeriasRepository feriasRepository,
-                                 AssinaturaService assinaturaService) {
+                                 AssinaturaMensalRepository assinaturaMensalRepository) {
         this.emailService = emailService;
         this.bancoHorasService = bancoHorasService;
         this.colaboradorRepository = colaboradorRepository;
         this.feriasRepository = feriasRepository;
-        this.assinaturaService = assinaturaService;
+        this.assinaturaMensalRepository = assinaturaMensalRepository;
+    }
+
+    private static int ymToInt(YearMonth ym) {
+        return ym.getYear() * 100 + ym.getMonthValue();
     }
 
     /**
-     * Envia o relatório mensal (HTML + CSV) e inclui links/botões públicos de decisão (aceitar/recusar).
-     * @param colaboradorId ID do colaborador
-     * @param competencia YearMonth (ex.: 2025-09)
-     * @param hostBase base do host para montar o link público (ex.: http://localhost:8080)
+     * Envia o relatório mensal (HTML + CSV) e inclui botões para decidir no sistema (sem token)
+     * e um botão extra para "Acessar site".
      */
     public void enviarRelatorioMensal(Long colaboradorId, YearMonth competencia, String hostBase) {
         if (competencia == null) throw new IllegalArgumentException("competencia é obrigatória");
@@ -53,7 +57,7 @@ public class RelatorioEmailService {
         // Extrato do período
         ExtratoPeriodoDTO extrato = bancoHorasService.extratoPeriodo(colaboradorId, de, ate);
 
-        // Saldo de férias disponível (2,5 dias/mês, máximo 30), descontando CRIADA/APROVADA
+        // Saldo de férias disponível
         LocalDate adm = c.getDataAdmissao() != null ? c.getDataAdmissao() : LocalDate.now();
         long meses = Math.max(0, Period.between(adm, LocalDate.now()).toTotalMonths());
         int diasDireito = (int) Math.min(30, Math.floor(meses * 2.5));
@@ -62,14 +66,25 @@ public class RelatorioEmailService {
         );
         int saldoFeriasDias = Math.max(0, diasDireito - (consumidosOuPendentes == null ? 0 : consumidosOuPendentes));
 
-        // Token de assinatura (72h de validade)
-        String base = normalizeHostBase(hostBase);
-        AssinaturaToken t = assinaturaService.criarToken(colaboradorId, de, ate, 72, base);
+        // Garante/obtém a assinatura mensal PENDENTE para a competência (AAAAMM)
+        int compInt = ymToInt(competencia);
+        AssinaturaMensal ass = assinaturaMensalRepository
+                .findByColaboradorIdAndCompetencia(c.getId(), compInt)
+                .orElseGet(() -> {
+                    AssinaturaMensal novo = new AssinaturaMensal();
+                    novo.setColaborador(c);
+                    novo.setCompetencia(compInt);
+                    // status default = PENDENTE na entidade
+                    return assinaturaMensalRepository.save(novo);
+                });
 
-        // URLs PÚBLICAS (SINGULAR) — clique do e-mail já decide
-        String urlAceitar = base + "/public/assinatura/" + t.getToken() + "/decidir?acao=sim";
-        String urlRecusar = base + "/public/assinatura/" + t.getToken() + "/decidir?acao=nao";
-        String urlStatus  = base + "/public/assinatura/" + t.getToken();
+        // URLs de decisão (por enquanto meramente informativas no e-mail; a decisão real ocorre no front)
+        String base = (hostBase != null && !hostBase.isBlank()) ? hostBase : "http://localhost:8080";
+        String decidirSim = base + "/public/assinatura/" + ass.getId() + "/decidir?acao=sim";
+        String decidirNao = base + "/public/assinatura/" + ass.getId() + "/decidir?acao=nao";
+
+        // URL do "Acessar site"
+        String frontUrl = base;
 
         // Montar HTML
         String linhasTabela = montarLinhasTabela(extrato.dias());
@@ -135,23 +150,25 @@ public class RelatorioEmailService {
                         </div>
 
                         <div style="margin-top:18px; text-align:center">
-                          <a href="%s"
-                             style="display:inline-block; background:#16a34a; color:#fff; text-decoration:none; padding:12px 18px; border-radius:10px; font-weight:600; margin-right:10px;">
+                          <a href="%s" target="_blank" rel="noopener noreferrer"
+                             style="display:inline-block; background:#2563eb; color:#fff; text-decoration:none; padding:12px 18px; border-radius:10px; font-weight:600; margin-right:8px">
                             Estou de acordo
                           </a>
-                          <a href="%s"
-                             style="display:inline-block; background:#dc2626; color:#fff; text-decoration:none; padding:12px 18px; border-radius:10px; font-weight:600;">
+                          <a href="%s" target="_blank" rel="noopener noreferrer"
+                             style="display:inline-block; background:#ef4444; color:#fff; text-decoration:none; padding:12px 18px; border-radius:10px; font-weight:600">
                             Não estou de acordo
                           </a>
-                          <p style="margin:10px 0 0 0; color:#666; font-size:12px">
-                            O link expira em 72 horas.
-                          </p>
-                          <div style="margin-top:10px; font-size:12px; color:#666; text-align:left; word-break:break-all;">
-                            <div><b>Links alternativos (caso os botões não funcionem):</b></div>
-                            <div>Aceitar: %s</div>
-                            <div>Recusar: %s</div>
-                            <div>Status: %s</div>
+
+                          <div style="margin-top:14px;">
+                            <a href="%s" target="_blank" rel="noopener noreferrer"
+                               style="display:inline-block; background:#10b981; color:#fff; text-decoration:none; padding:10px 16px; border-radius:8px; font-weight:600">
+                              Acessar site
+                            </a>
                           </div>
+
+                          <p style="margin:10px 0 0 0; color:#666; font-size:12px">
+                            Caso prefira, você também pode acessar o site e decidir pelo painel.
+                          </p>
                         </div>
 
                         <p style="margin:16px 0 6px 0; color:#666">Relatório em CSV anexado a este e-mail.</p>
@@ -171,11 +188,9 @@ public class RelatorioEmailService {
                 linhasTabela,
                 saldoPeriodoFmt,
                 saldoFeriasDias,
-                urlAceitar,
-                urlRecusar,
-                urlAceitar,
-                urlRecusar,
-                urlStatus
+                decidirSim,
+                decidirNao,
+                frontUrl
         );
 
         // CSV em anexo
@@ -193,15 +208,13 @@ public class RelatorioEmailService {
                 csvBytes,
                 "text/csv"
         );
+
+        // marca horário de envio (sem método custom no repo)
+        ass.setEmailSentAt(LocalDateTime.now());
+        assinaturaMensalRepository.save(ass);
     }
 
     /* ================== Helpers ================== */
-
-    private static String normalizeHostBase(String hostBase) {
-        String base = (hostBase != null && !hostBase.isBlank()) ? hostBase.trim() : "http://localhost:8080";
-        while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
-        return base;
-    }
 
     private static String montarLinhasTabela(List<ExtratoDiaDTO> dias) {
         StringBuilder sb = new StringBuilder();

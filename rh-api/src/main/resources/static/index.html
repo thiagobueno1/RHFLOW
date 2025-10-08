@@ -45,6 +45,7 @@
     .btn.brand{background:linear-gradient(90deg,#6366f1,#8b5cf6)}
     .btn.accent{background:linear-gradient(90deg,#10b981,#22c55e)}
     .btn.warn{background:linear-gradient(90deg,#f59e0b,#f97316)}
+    .btn.bad{background:linear-gradient(90deg,#ef4444,#dc2626)}
     .btn.ghost{background:#0b1222;border:1px solid #1f2937;color:var(--muted)}
     .muted{color:var(--muted);font-size:12px}
 
@@ -64,6 +65,11 @@
     .subgrid{display:grid;gap:12px}
     @media(min-width:960px){.subgrid{grid-template-columns:2fr 1fr}}
     .kpis{display:flex;gap:10px;flex-wrap:wrap}
+
+    /* Aceite box */
+    .box{
+      border:1px solid #1f2937;background:#0b1222;border-radius:12px;padding:14px
+    }
   </style>
 </head>
 <body>
@@ -86,6 +92,31 @@
     <div class="actions">
       <button class="btn brand" onclick="login()">Entrar</button>
       <button class="btn ghost" onclick="logout()">Sair</button>
+    </div>
+  </section>
+
+  <!-- Aceite de Relatório Mensal -->
+  <section class="card">
+    <h3 class="title"><span class="dot"></span>Aceite de Relatório Mensal</h3>
+
+    <div class="row">
+      <div>
+        <label>Competência (YYYY-MM)</label>
+        <input id="aceite_comp" placeholder="YYYY-MM">
+      </div>
+      <div style="align-self:end">
+        <div class="actions" style="margin-top:0">
+          <button class="btn ghost" onclick="checkAceite()">Atualizar status</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="aceiteBox" class="box" style="margin-top:10px">
+      <p class="muted" id="aceiteMsg">Faça login para verificar pendências.</p>
+      <div class="actions" id="aceiteBtns" style="display:none">
+        <button class="btn accent" onclick="decidirAceite(true)">Estou de acordo</button>
+        <button class="btn bad" onclick="decidirAceite(false)">Não estou de acordo</button>
+      </div>
     </div>
   </section>
 
@@ -166,6 +197,12 @@ function authHeaders(){
   return token? { "Authorization":"Bearer "+token, "Content-Type":"application/json" } : {"Content-Type":"application/json"};
 }
 
+function ymNow(){
+  const d = new Date();
+  const m = (d.getMonth()+1).toString().padStart(2,'0');
+  return `${d.getFullYear()}-${m}`;
+}
+
 async function login(){
   const email=document.getElementById('email').value.trim();
   const senha=document.getElementById('senha').value.trim();
@@ -174,9 +211,15 @@ async function login(){
   const data=await r.json();
   token=data.token; me=data;
   document.getElementById('me').innerText=`Logado: ${data.nome} (${data.role})`;
+
+  // seta competência padrão do aceite para o mês atual
+  document.getElementById('aceite_comp').value = ymNow();
+
+  // verifica aceite imediatamente
+  checkAceite();
 }
 
-function logout(){ token=null; me=null; document.getElementById('me').innerText=''; }
+function logout(){ token=null; me=null; document.getElementById('me').innerText=''; document.getElementById('aceiteMsg').innerText='Faça login para verificar pendências.'; document.getElementById('aceiteBtns').style.display='none'; }
 
 function minutesToHHMM(min){
   const sign = min<0 ? '-' : '';
@@ -186,10 +229,95 @@ function minutesToHHMM(min){
   return `${sign}${h}:${m}`;
 }
 
+/* ================== Aceite Mensal ================== */
+
+async function checkAceite(){
+  const msg = document.getElementById('aceiteMsg');
+  const btns = document.getElementById('aceiteBtns');
+  if(!token){ msg.innerText='Faça login para verificar pendências.'; btns.style.display='none'; return; }
+
+  const comp = (document.getElementById('aceite_comp').value || ymNow()).trim();
+  if(!/^\d{4}-\d{2}$/.test(comp)){ msg.innerText='Competência inválida (use YYYY-MM)'; btns.style.display='none'; return; }
+
+  try{
+    const r = await fetch(`/assinaturas-mensais/status?competencia=${encodeURIComponent(comp)}`, { headers: authHeaders() });
+    if(!r.ok){
+      const t = await r.text();
+      msg.innerText = `Não foi possível consultar o status (${r.status}). ${t||''}`;
+      btns.style.display='none';
+      return;
+    }
+    const j = await r.json();
+    const status = (j.status||'').toUpperCase();
+    // tenta ler pendência do anterior; se não vier no JSON, tenta fallback
+    let pendAnterior = (typeof j.pendenciaAnterior === 'boolean') ? j.pendenciaAnterior : null;
+
+    if(pendAnterior === null){
+      try {
+        const rp = await fetch(`/assinaturas-mensais/tem-pendencia-anterior?competencia=${encodeURIComponent(comp)}`, { headers: authHeaders() });
+        if(rp.ok){
+          const jp = await rp.json();
+          // aceita tanto {pendenciaAnterior:true/false} quanto um boolean direto
+          pendAnterior = (typeof jp === 'boolean') ? jp : !!jp.pendenciaAnterior;
+        }
+      } catch(e){}
+    }
+
+    if(status === 'PENDENTE'){
+      if(pendAnterior){
+        msg.innerHTML = `Você possui pendências do mês anterior. <br><span class="muted">Regularize primeiro o mês anterior para poder decidir a competência ${comp}.</span>`;
+        btns.style.display='none';
+      }else{
+        msg.innerHTML = `Você confirma que leu e concorda com o relatório da competência <b>${comp}</b>?`;
+        btns.style.display='flex';
+      }
+    } else if(status === 'ASSINADO'){
+      msg.innerHTML = `Tudo certo! Relatório de <b>${comp}</b> está <span class="pill ok" style="border:none">ASSINADO</span>.`;
+      btns.style.display='none';
+    } else if(status === 'RECUSADO'){
+      msg.innerHTML = `Relatório de <b>${comp}</b> foi <span class="pill bad" style="border:none">RECUSADO</span>. Aguarde contato do RH.`;
+      btns.style.display='none';
+    } else {
+      msg.innerText = `Sem pendências de aceite no momento.`;
+      btns.style.display='none';
+    }
+  }catch(e){
+    msg.innerText = 'Erro ao consultar status: '+e;
+    btns.style.display='none';
+  }
+}
+
+async function decidirAceite(aceita){
+  const msg = document.getElementById('aceiteMsg');
+  const btns = document.getElementById('aceiteBtns');
+  if(!token){ alert('Faça login'); return; }
+  const comp = (document.getElementById('aceite_comp').value || ymNow()).trim();
+
+  try{
+    const r = await fetch('/assinaturas-mensais/decidir', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ competencia: comp, aceita })
+    });
+    const t = await r.text();
+    if(r.ok){
+      msg.innerText = aceita ? 'Assinatura registrada com sucesso.' : 'Recusa registrada com sucesso.';
+      btns.style.display='none';
+      // reconsulta para refletir status final
+      checkAceite();
+    } else {
+      msg.innerText = `Não foi possível registrar decisão (${r.status}): ${t}`;
+    }
+  }catch(e){
+    msg.innerText = 'Erro ao enviar decisão: '+e;
+  }
+}
+
+/* ================== Batida, Extrato, etc. (seu código original) ================== */
+
 async function baterPonto(){
   if(!token){ alert('Faça login'); return; }
   const body={ data: document.getElementById('bp_data').value || null };
-  // geoloc (opcional)
   const wantGeo = document.getElementById('bp_geo').checked;
   let geo = null;
   if(wantGeo && navigator.geolocation){
@@ -205,9 +333,7 @@ async function baterPonto(){
   const res = await fetch('/pontos/bater',{method:'POST',headers:authHeaders(),body:JSON.stringify(body)});
   const txt = await res.text();
   document.getElementById('bp_msg').innerText = res.ok ? 'Batida registrada!' : ('Erro '+res.status+': '+txt);
-  // atualiza kpis do painel (batidas hoje)
   try{
-    const hoje = new Date().toISOString().slice(0,10);
     const r = await fetch(`/pontos/hoje`,{headers:authHeaders()});
     if(r.ok){
       const j = await r.json();
@@ -257,7 +383,6 @@ async function extrato(){
   const j= await r.json();
   renderTabela('extratoTabela', j.dias, ['data','previstoMin','trabalhadoMin','saldoMin']);
 
-  // KPIs resumo (novos campos!)
   const resumos = document.getElementById('resumos');
   resumos.innerHTML = `
     <span class="pill info">Saldo período: ${j.saldoTotalMin} min (${minutesToHHMM(j.saldoTotalMin)})</span>
@@ -265,7 +390,6 @@ async function extrato(){
     <span class="pill ok">Saldo de férias: ${j.saldoFeriasDias} dias</span>
   `;
 
-  // também atualiza KPIs do painel
   document.getElementById('kpi-ferias').innerText = `Férias: ${j.saldoFeriasDias} dias`;
   document.getElementById('kpi-banco').innerText = `Banco: ${minutesToHHMM(j.bancoAcumuladoMin)}`;
   document.getElementById('b_msg').innerText = '';
@@ -281,7 +405,6 @@ function baixarCSV(){
     csv += `"${tds[0]}","${tds[1]}","${tds[2]}","${tds[3]}"\n`;
   });
 
-  // adiciona resumo no final
   const kpis = document.getElementById('resumos').innerText.replace(/\s+/g,' ').trim();
   csv += `\n"RESUMO","${kpis}","",""\n`;
 
