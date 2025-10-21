@@ -22,10 +22,12 @@ public class AssinaturaMensalService {
         this.colabRepo = colabRepo;
     }
 
+    /** Converte YearMonth -> inteiro YYYYMM (ex.: 2025-09 -> 202509) */
     public static int ymToInt(YearMonth ym) {
         return ym.getYear() * 100 + ym.getMonthValue();
     }
 
+    /** Cria (se não existir) e marca que o e-mail foi enviado para a competência informada. */
     @Transactional
     public AssinaturaMensal marcarEmailEnviado(Long colaboradorId, YearMonth competencia) {
         Colaborador c = colabRepo.findById(colaboradorId)
@@ -45,6 +47,7 @@ public class AssinaturaMensalService {
         return repo.save(am);
     }
 
+    /** Consulta o status da assinatura na competência (default: PENDENTE se não existe registro). */
     @Transactional(readOnly = true)
     public AssinaturaMensalStatus status(Long colaboradorId, YearMonth competencia) {
         Colaborador c = colabRepo.findById(colaboradorId)
@@ -54,51 +57,50 @@ public class AssinaturaMensalService {
             .orElse(AssinaturaMensalStatus.PENDENTE);
     }
 
+    /**
+     * **Modo flexibilizado (TCC/demo):**
+     * Registra a decisão para QUALQUER competência, sem exigir:
+     *  - que seja a competência atual;
+     *  - que o mês anterior esteja assinado;
+     *  - que o e-mail tenha sido enviado.
+     * Única regra: deve existir o registro de assinatura para a competência.
+     */
     @Transactional
     public AssinaturaMensal decidir(Long colaboradorId, YearMonth competencia, boolean aceita, String ip, String ua) {
         Colaborador c = colabRepo.findById(colaboradorId)
             .orElseThrow(() -> new IllegalArgumentException("Colaborador não encontrado"));
 
-        YearMonth agora = YearMonth.now();
-        if (!competencia.equals(agora)) {
-            throw new IllegalStateException("Só é permitido decidir a competência atual.");
-        }
+        int comp = ymToInt(competencia);
 
-        // Exige mês anterior ACEITO
-        YearMonth anterior = competencia.minusMonths(1);
-        repo.findByColaboradorAndCompetencia(c, ymToInt(anterior))
-            .ifPresent(prev -> {
-                if (prev.getStatus() != AssinaturaMensalStatus.ACEITO) {
-                    throw new IllegalStateException("Você possui pendências no mês anterior.");
-                }
-            });
-
-        AssinaturaMensal am = repo.findByColaboradorAndCompetencia(c, ymToInt(competencia))
+        // ÚNICA validação: precisa existir o registro dessa competência
+        AssinaturaMensal am = repo.findByColaboradorAndCompetencia(c, comp)
             .orElseThrow(() -> new IllegalStateException("Este relatório ainda não foi disponibilizado para aceite."));
 
-        if (am.getEmailSentAt() == null) {
-            throw new IllegalStateException("Este relatório ainda não foi enviado por e-mail.");
-        }
-
-        if (am.getStatus() == AssinaturaMensalStatus.ACEITO ||
+        // Idempotente se já houver decisão final
+        if (am.getStatus() == AssinaturaMensalStatus.ASSINADO ||
             am.getStatus() == AssinaturaMensalStatus.RECUSADO) {
-            return am; // idempotente
+            return am;
         }
 
-        am.setStatus(aceita ? AssinaturaMensalStatus.ACEITO : AssinaturaMensalStatus.RECUSADO);
+        am.setStatus(aceita ? AssinaturaMensalStatus.ASSINADO : AssinaturaMensalStatus.RECUSADO);
         am.setDecididoEm(LocalDateTime.now());
         am.setDecididoIp(ip);
         am.setDecididoUa(ua);
+
         return repo.save(am);
     }
 
+    /**
+     * Mantive este helper caso o front ainda queira exibir aviso de pendências.
+     * Ele **não bloqueia** mais nada no servidor.
+     */
     @Transactional(readOnly = true)
     public boolean temPendenciaAnterior(Long colaboradorId, YearMonth competenciaAtual) {
         Colaborador c = colabRepo.findById(colaboradorId)
             .orElseThrow(() -> new IllegalArgumentException("Colaborador não encontrado"));
         YearMonth anterior = competenciaAtual.minusMonths(1);
         return repo.findByColaboradorAndCompetencia(c, ymToInt(anterior))
-            .map(a -> a.getStatus() != AssinaturaMensalStatus.ACEITO)
+            .map(a -> a.getStatus() != AssinaturaMensalStatus.ASSINADO)
             .orElse(false);
     }
 }

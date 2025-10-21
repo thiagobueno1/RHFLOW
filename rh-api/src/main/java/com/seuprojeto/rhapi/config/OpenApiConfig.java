@@ -15,7 +15,7 @@ public class OpenApiConfig {
     public OpenAPI api() {
         final String schemeName = "bearerAuth";
         return new OpenAPI()
-                .info(new Info().title("RH API").version("v1"))
+                .info(new Info().title("RHFlow API").version("v1"))
                 .components(new Components().addSecuritySchemes(
                         schemeName,
                         new SecurityScheme()

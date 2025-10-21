@@ -197,10 +197,30 @@ function authHeaders(){
   return token? { "Authorization":"Bearer "+token, "Content-Type":"application/json" } : {"Content-Type":"application/json"};
 }
 
+// mês atual YYYY-MM
 function ymNow(){
   const d = new Date();
   const m = (d.getMonth()+1).toString().padStart(2,'0');
   return `${d.getFullYear()}-${m}`;
+}
+
+// mês fechado padrão = mês anterior ao atual (YYYY-MM)
+function ymPrev(){
+  const d = new Date();
+  let y = d.getFullYear();
+  let m = d.getMonth()+1; // 1..12
+  m = m-1;
+  if(m===0){ m=12; y--; }
+  return `${y}-${String(m).padStart(2,'0')}`;
+}
+
+// tenta obter o colaboradorId a partir do payload do login ou dos inputs existentes
+function getColaboradorId(){
+  if (me && typeof me.colaboradorId === 'number') return me.colaboradorId;
+  if (me && typeof me.id === 'number') return me.id;
+  const fallback = document.getElementById('b_colab')?.value || document.getElementById('p_colab')?.value;
+  const n = fallback ? parseInt(fallback, 10) : NaN;
+  return Number.isFinite(n) ? n : null;
 }
 
 async function login(){
@@ -212,14 +232,19 @@ async function login(){
   token=data.token; me=data;
   document.getElementById('me').innerText=`Logado: ${data.nome} (${data.role})`;
 
-  // seta competência padrão do aceite para o mês atual
-  document.getElementById('aceite_comp').value = ymNow();
+  // competência padrão do aceite = mês anterior
+  document.getElementById('aceite_comp').value = ymPrev();
 
   // verifica aceite imediatamente
-  checkAceite();
+  try { await checkAceite(); } catch(e) {}
 }
 
-function logout(){ token=null; me=null; document.getElementById('me').innerText=''; document.getElementById('aceiteMsg').innerText='Faça login para verificar pendências.'; document.getElementById('aceiteBtns').style.display='none'; }
+function logout(){
+  token=null; me=null;
+  document.getElementById('me').innerText='';
+  document.getElementById('aceiteMsg').innerText='Faça login para verificar pendências.';
+  document.getElementById('aceiteBtns').style.display='none';
+}
 
 function minutesToHHMM(min){
   const sign = min<0 ? '-' : '';
@@ -236,11 +261,14 @@ async function checkAceite(){
   const btns = document.getElementById('aceiteBtns');
   if(!token){ msg.innerText='Faça login para verificar pendências.'; btns.style.display='none'; return; }
 
-  const comp = (document.getElementById('aceite_comp').value || ymNow()).trim();
+  const comp = (document.getElementById('aceite_comp').value || ymPrev()).trim();
   if(!/^\d{4}-\d{2}$/.test(comp)){ msg.innerText='Competência inválida (use YYYY-MM)'; btns.style.display='none'; return; }
 
+  const colaboradorId = getColaboradorId();
+  if(!colaboradorId){ msg.innerText='Não foi possível identificar seu colaboradorId.'; btns.style.display='none'; return; }
+
   try{
-    const r = await fetch(`/assinaturas-mensais/status?competencia=${encodeURIComponent(comp)}`, { headers: authHeaders() });
+    const r = await fetch(`/assinaturas-mensais/status?colaboradorId=${encodeURIComponent(colaboradorId)}&competencia=${encodeURIComponent(comp)}`, { headers: authHeaders() });
     if(!r.ok){
       const t = await r.text();
       msg.innerText = `Não foi possível consultar o status (${r.status}). ${t||''}`;
@@ -249,33 +277,32 @@ async function checkAceite(){
     }
     const j = await r.json();
     const status = (j.status||'').toUpperCase();
-    // tenta ler pendência do anterior; se não vier no JSON, tenta fallback
-    let pendAnterior = (typeof j.pendenciaAnterior === 'boolean') ? j.pendenciaAnterior : null;
 
+    // pendência do mês anterior (apenas informativo)
+    let pendAnterior = (typeof j.pendenciaAnterior === 'boolean') ? j.pendenciaAnterior : null;
     if(pendAnterior === null){
       try {
-        const rp = await fetch(`/assinaturas-mensais/tem-pendencia-anterior?competencia=${encodeURIComponent(comp)}`, { headers: authHeaders() });
+        const rp = await fetch(`/assinaturas-mensais/tem-pendencia-anterior?colaboradorId=${encodeURIComponent(colaboradorId)}&competencia=${encodeURIComponent(comp)}`, { headers: authHeaders() });
         if(rp.ok){
           const jp = await rp.json();
-          // aceita tanto {pendenciaAnterior:true/false} quanto um boolean direto
           pendAnterior = (typeof jp === 'boolean') ? jp : !!jp.pendenciaAnterior;
         }
       } catch(e){}
     }
 
     if(status === 'PENDENTE'){
+      // **NÃO bloqueia** mais os botões; apenas informa
       if(pendAnterior){
-        msg.innerHTML = `Você possui pendências do mês anterior. <br><span class="muted">Regularize primeiro o mês anterior para poder decidir a competência ${comp}.</span>`;
-        btns.style.display='none';
+        msg.innerHTML = `Atenção: há pendência no mês anterior.<br><span class="muted">Você ainda pode decidir a competência <b>${comp}</b> para fins de demonstração.</span>`;
       }else{
         msg.innerHTML = `Você confirma que leu e concorda com o relatório da competência <b>${comp}</b>?`;
-        btns.style.display='flex';
       }
+      btns.style.display='flex';
     } else if(status === 'ASSINADO'){
       msg.innerHTML = `Tudo certo! Relatório de <b>${comp}</b> está <span class="pill ok" style="border:none">ASSINADO</span>.`;
       btns.style.display='none';
     } else if(status === 'RECUSADO'){
-      msg.innerHTML = `Relatório de <b>${comp}</b> foi <span class="pill bad" style="border:none">RECUSADO</span>. Aguarde contato do RH.`;
+      msg.innerHTML = `Relatório de <b>${comp}</b> foi <span class="pill bad" style="border:none">RECUSADO</span>.`;
       btns.style.display='none';
     } else {
       msg.innerText = `Sem pendências de aceite no momento.`;
@@ -291,19 +318,20 @@ async function decidirAceite(aceita){
   const msg = document.getElementById('aceiteMsg');
   const btns = document.getElementById('aceiteBtns');
   if(!token){ alert('Faça login'); return; }
-  const comp = (document.getElementById('aceite_comp').value || ymNow()).trim();
+
+  const comp = (document.getElementById('aceite_comp').value || ymPrev()).trim();
+  const colaboradorId = getColaboradorId();
+  if(!colaboradorId){ msg.innerText='Não foi possível identificar seu colaboradorId.'; return; }
 
   try{
-    const r = await fetch('/assinaturas-mensais/decidir', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ competencia: comp, aceita })
-    });
+    // backend espera QUERY PARAMS
+    const url = `/assinaturas-mensais/decidir?colaboradorId=${encodeURIComponent(colaboradorId)}&competencia=${encodeURIComponent(comp)}&aceita=${aceita}`;
+    const r = await fetch(url, { method: 'POST', headers: authHeaders() });
     const t = await r.text();
     if(r.ok){
       msg.innerText = aceita ? 'Assinatura registrada com sucesso.' : 'Recusa registrada com sucesso.';
       btns.style.display='none';
-      // reconsulta para refletir status final
+      // reconsulta status
       checkAceite();
     } else {
       msg.innerText = `Não foi possível registrar decisão (${r.status}): ${t}`;
@@ -430,6 +458,9 @@ function renderTabela(containerId, data, cols){
   }).join('');
   el.innerHTML = `<table>${head}<tbody>${rows}</tbody></table>`;
 }
+
+/* prepara a UI ao carregar */
+document.getElementById('aceite_comp').value = ymPrev();
 </script>
 </body>
 </html>
