@@ -43,8 +43,7 @@ public class RelatorioEmailService {
     }
 
     /**
-     * Envia o relatório mensal (HTML + CSV) e inclui botões para decidir no sistema (sem token)
-     * e um botão extra para "Acessar site".
+     * Envia o relatório mensal (HTML + CSV) com apenas o botão "Acessar site".
      */
     public void enviarRelatorioMensal(Long colaboradorId, YearMonth competencia, String hostBase) {
         if (competencia == null) throw new IllegalArgumentException("competencia é obrigatória");
@@ -54,10 +53,8 @@ public class RelatorioEmailService {
         Colaborador c = colaboradorRepository.findById(colaboradorId)
                 .orElseThrow(() -> new IllegalArgumentException("Colaborador não encontrado"));
 
-        // Extrato do período
         ExtratoPeriodoDTO extrato = bancoHorasService.extratoPeriodo(colaboradorId, de, ate);
 
-        // Saldo de férias disponível
         LocalDate adm = c.getDataAdmissao() != null ? c.getDataAdmissao() : LocalDate.now();
         long meses = Math.max(0, Period.between(adm, LocalDate.now()).toTotalMonths());
         int diasDireito = (int) Math.min(30, Math.floor(meses * 2.5));
@@ -66,7 +63,6 @@ public class RelatorioEmailService {
         );
         int saldoFeriasDias = Math.max(0, diasDireito - (consumidosOuPendentes == null ? 0 : consumidosOuPendentes));
 
-        // Garante/obtém a assinatura mensal PENDENTE para a competência (AAAAMM)
         int compInt = ymToInt(competencia);
         AssinaturaMensal ass = assinaturaMensalRepository
                 .findByColaboradorIdAndCompetencia(c.getId(), compInt)
@@ -74,19 +70,12 @@ public class RelatorioEmailService {
                     AssinaturaMensal novo = new AssinaturaMensal();
                     novo.setColaborador(c);
                     novo.setCompetencia(compInt);
-                    // status default = PENDENTE na entidade
                     return assinaturaMensalRepository.save(novo);
                 });
 
-        // URLs de decisão (por enquanto meramente informativas no e-mail; a decisão real ocorre no front)
         String base = (hostBase != null && !hostBase.isBlank()) ? hostBase : "http://localhost:8080";
-        String decidirSim = base + "/public/assinatura/" + ass.getId() + "/decidir?acao=sim";
-        String decidirNao = base + "/public/assinatura/" + ass.getId() + "/decidir?acao=nao";
-
-        // URL do "Acessar site"
         String frontUrl = base;
 
-        // Montar HTML
         String linhasTabela = montarLinhasTabela(extrato.dias());
         String saldoPeriodoFmt = formatMinutos(extrato.saldoTotalMin());
 
@@ -106,26 +95,11 @@ public class RelatorioEmailService {
                         <p style="margin:0 0 16px 0; color:#444">Competência: <b>%s</b></p>
 
                         <table role="presentation" cellspacing="0" cellpadding="0" style="width:100%%; border-collapse:collapse">
-                          <tr>
-                            <td style="padding:6px 0; color:#666">Período</td>
-                            <td style="padding:6px 0; text-align:right"><b>%s</b> a <b>%s</b></td>
-                          </tr>
-                          <tr>
-                            <td style="padding:6px 0; color:#666">Colaborador</td>
-                            <td style="padding:6px 0; text-align:right"><b>%s</b></td>
-                          </tr>
-                          <tr>
-                            <td style="padding:6px 0; color:#666">E-mail</td>
-                            <td style="padding:6px 0; text-align:right">%s</td>
-                          </tr>
-                          <tr>
-                            <td style="padding:6px 0; color:#666">Cargo</td>
-                            <td style="padding:6px 0; text-align:right">%s</td>
-                          </tr>
-                          <tr>
-                            <td style="padding:6px 0; color:#666">Departamento</td>
-                            <td style="padding:6px 0; text-align:right">%s</td>
-                          </tr>
+                          <tr><td style="padding:6px 0; color:#666">Período</td><td style="padding:6px 0; text-align:right"><b>%s</b> a <b>%s</b></td></tr>
+                          <tr><td style="padding:6px 0; color:#666">Colaborador</td><td style="padding:6px 0; text-align:right"><b>%s</b></td></tr>
+                          <tr><td style="padding:6px 0; color:#666">E-mail</td><td style="padding:6px 0; text-align:right">%s</td></tr>
+                          <tr><td style="padding:6px 0; color:#666">Cargo</td><td style="padding:6px 0; text-align:right">%s</td></tr>
+                          <tr><td style="padding:6px 0; color:#666">Departamento</td><td style="padding:6px 0; text-align:right">%s</td></tr>
                         </table>
 
                         <hr style="border:none; border-top:1px solid #eee; margin:18px 0" />
@@ -139,9 +113,7 @@ public class RelatorioEmailService {
                               <th style="text-align:right; padding:8px 6px; border-bottom:1px solid #eee">Saldo</th>
                             </tr>
                           </thead>
-                          <tbody>
-                            %s
-                          </tbody>
+                          <tbody>%s</tbody>
                         </table>
 
                         <div style="margin-top:16px; background:#f9fafb; border:1px solid #eef2f7; border-radius:10px; padding:12px">
@@ -151,23 +123,11 @@ public class RelatorioEmailService {
 
                         <div style="margin-top:18px; text-align:center">
                           <a href="%s" target="_blank" rel="noopener noreferrer"
-                             style="display:inline-block; background:#2563eb; color:#fff; text-decoration:none; padding:12px 18px; border-radius:10px; font-weight:600; margin-right:8px">
-                            Estou de acordo
+                             style="display:inline-block; background:#10b981; color:#fff; text-decoration:none; padding:10px 16px; border-radius:8px; font-weight:600">
+                            Acessar site
                           </a>
-                          <a href="%s" target="_blank" rel="noopener noreferrer"
-                             style="display:inline-block; background:#ef4444; color:#fff; text-decoration:none; padding:12px 18px; border-radius:10px; font-weight:600">
-                            Não estou de acordo
-                          </a>
-
-                          <div style="margin-top:14px;">
-                            <a href="%s" target="_blank" rel="noopener noreferrer"
-                               style="display:inline-block; background:#10b981; color:#fff; text-decoration:none; padding:10px 16px; border-radius:8px; font-weight:600">
-                              Acessar site
-                            </a>
-                          </div>
-
                           <p style="margin:10px 0 0 0; color:#666; font-size:12px">
-                            Caso prefira, você também pode acessar o site e decidir pelo painel.
+                            Para realizar o aceite ou recusa, acesse o painel do sistema.
                           </p>
                         </div>
 
@@ -188,18 +148,12 @@ public class RelatorioEmailService {
                 linhasTabela,
                 saldoPeriodoFmt,
                 saldoFeriasDias,
-                decidirSim,
-                decidirNao,
                 frontUrl
         );
 
-        // CSV em anexo
         byte[] csvBytes = montarCsv(extrato).getBytes(StandardCharsets.UTF_8);
-
-        // Assunto
         String subject = "Extrato Mensal — %s (%s)".formatted(nullSafe(c.getNome()), competencia);
 
-        // Enviar
         emailService.sendHtmlWithAttachment(
                 c.getEmail(),
                 subject,
@@ -209,43 +163,39 @@ public class RelatorioEmailService {
                 "text/csv"
         );
 
-        // marca horário de envio (sem método custom no repo)
         ass.setEmailSentAt(LocalDateTime.now());
         assinaturaMensalRepository.save(ass);
     }
-
-    /* ================== Helpers ================== */
 
     private static String montarLinhasTabela(List<ExtratoDiaDTO> dias) {
         StringBuilder sb = new StringBuilder();
         if (dias != null) {
             for (ExtratoDiaDTO d : dias) {
-                String data = d.data().toString();
-                String prev = formatMinutos(d.previstoMin());
-                String trab = formatMinutos(d.trabalhadoMin());
-                String saldo = formatSaldo(d.saldoMin());
                 sb.append("""
                         <tr>
                           <td style="padding:8px 6px; border-bottom:1px solid #f2f2f2">%s</td>
-                          <td style="padding:8px 6px; border-bottom:1px solid #f2f2f2; text-align:right">%s</td>
-                          <td style="padding:8px 6px; border-bottom:1px solid #f2f2f2; text-align:right">%s</td>
-                          <td style="padding:8px 6px; border-bottom:1px solid #f2f2f2; text-align:right">%s</td>
+                          <td style="padding:8px 6px; text-align:right">%s</td>
+                          <td style="padding:8px 6px; text-align:right">%s</td>
+                          <td style="padding:8px 6px; text-align:right">%s</td>
                         </tr>
-                        """.formatted(data, prev, trab, saldo));
+                        """.formatted(
+                        d.data(),
+                        formatMinutos(d.previstoMin()),
+                        formatMinutos(d.trabalhadoMin()),
+                        formatSaldo(d.saldoMin())
+                ));
             }
         }
         return sb.toString();
     }
 
     private static String montarCsv(ExtratoPeriodoDTO extrato) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("data;previsto_min;trabalhado_min;saldo_min\n");
+        StringBuilder sb = new StringBuilder("data;previsto_min;trabalhado_min;saldo_min\n");
         if (extrato != null && extrato.dias() != null) {
             for (ExtratoDiaDTO d : extrato.dias()) {
-                sb.append(d.data()).append(';')
-                        .append(d.previstoMin()).append(';')
-                        .append(d.trabalhadoMin()).append(';')
-                        .append(d.saldoMin()).append('\n');
+                sb.append("%s;%d;%d;%d\n".formatted(
+                        d.data(), d.previstoMin(), d.trabalhadoMin(), d.saldoMin()
+                ));
             }
         }
         sb.append("\nTOTAL_SALDO_MIN;").append(extrato != null ? extrato.saldoTotalMin() : 0).append('\n');

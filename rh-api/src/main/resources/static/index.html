@@ -6,15 +6,15 @@
   <title>RH - Painel</title>
   <style>
     :root{
-      --bg:#0f172a;        /* slate-900 */
-      --card:#111827;      /* gray-900 */
-      --muted:#9ca3af;     /* gray-400 */
-      --text:#e5e7eb;      /* gray-200 */
-      --brand:#6366f1;     /* indigo-500 */
-      --accent:#10b981;    /* emerald-500 */
-      --warn:#f59e0b;      /* amber-500 */
-      --bad:#ef4444;       /* red-500 */
-      --ok:#22c55e;        /* green-500 */
+      --bg:#0f172a;
+      --card:#111827;
+      --muted:#9ca3af;
+      --text:#e5e7eb;
+      --brand:#6366f1;
+      --accent:#10b981;
+      --warn:#f59e0b;
+      --bad:#ef4444;
+      --ok:#22c55e;
     }
     *{box-sizing:border-box}
     body{
@@ -48,13 +48,11 @@
     .btn.bad{background:linear-gradient(90deg,#ef4444,#dc2626)}
     .btn.ghost{background:#0b1222;border:1px solid #1f2937;color:var(--muted)}
     .muted{color:var(--muted);font-size:12px}
-
     .clock{font-size:36px;font-weight:800;letter-spacing:2px}
     .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:12px;border:1px solid #273043;background:#0b1222}
     .pill.ok{border-color:rgba(34,197,94,.25);color:#bbf7d0}
     .pill.bad{border-color:rgba(239,68,68,.25);color:#fecaca}
     .pill.info{border-color:rgba(99,102,241,.25);color:#c7d2fe}
-
     table{width:100%;border-collapse:collapse;margin-top:12px}
     th,td{padding:10px;border-bottom:1px solid #1f2937;font-size:14px}
     th{color:#c7d2fe;text-transform:uppercase;letter-spacing:.04em;font-size:12px}
@@ -65,11 +63,7 @@
     .subgrid{display:grid;gap:12px}
     @media(min-width:960px){.subgrid{grid-template-columns:2fr 1fr}}
     .kpis{display:flex;gap:10px;flex-wrap:wrap}
-
-    /* Aceite box */
-    .box{
-      border:1px solid #1f2937;background:#0b1222;border-radius:12px;padding:14px
-    }
+    .box{border:1px solid #1f2937;background:#0b1222;border-radius:12px;padding:14px}
   </style>
 </head>
 <body>
@@ -95,22 +89,13 @@
     </div>
   </section>
 
-  <!-- Aceite de Relatório Mensal -->
+  <!-- Aceite -->
   <section class="card">
     <h3 class="title"><span class="dot"></span>Aceite de Relatório Mensal</h3>
-
     <div class="row">
-      <div>
-        <label>Competência (YYYY-MM)</label>
-        <input id="aceite_comp" placeholder="YYYY-MM">
-      </div>
-      <div style="align-self:end">
-        <div class="actions" style="margin-top:0">
-          <button class="btn ghost" onclick="checkAceite()">Atualizar status</button>
-        </div>
-      </div>
+      <div><label>Competência (YYYY-MM)</label><input id="aceite_comp" placeholder="YYYY-MM"></div>
+      <div style="align-self:end"><div class="actions" style="margin-top:0"><button class="btn ghost" onclick="checkAceite()">Atualizar status</button></div></div>
     </div>
-
     <div id="aceiteBox" class="box" style="margin-top:10px">
       <p class="muted" id="aceiteMsg">Faça login para verificar pendências.</p>
       <div class="actions" id="aceiteBtns" style="display:none">
@@ -120,7 +105,7 @@
     </div>
   </section>
 
-  <!-- Painel rápido -->
+  <!-- Painel -->
   <section class="card">
     <h3 class="title"><span class="dot"></span>Painel de Batida</h3>
     <div class="subgrid">
@@ -162,7 +147,7 @@
     <div id="pontosTabela"></div>
   </section>
 
-  <!-- Banco de horas -->
+  <!-- Banco de Horas -->
   <section class="card">
     <h3 class="title"><span class="dot"></span>Banco de Horas</h3>
     <div class="row">
@@ -172,7 +157,6 @@
       <div><label>Até</label><input id="b_ate" type="date"></div>
     </div>
     <div class="actions">
-      <button class="btn brand" onclick="recalcular()">Recalcular Mês</button>
       <button class="btn accent" onclick="extrato()">Extrato</button>
       <button class="btn warn" onclick="baixarCSV()">Relatório CSV</button>
       <span id="b_msg" class="muted"></span>
@@ -187,280 +171,64 @@
 let token=null, me=null;
 const Z = new Intl.DateTimeFormat('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
 
-function tick(){
-  document.getElementById('relogio').innerText = Z.format(new Date());
-  requestAnimationFrame(()=>setTimeout(tick,800));
-}
+function tick(){document.getElementById('relogio').innerText=Z.format(new Date());requestAnimationFrame(()=>setTimeout(tick,800));}
 tick();
 
-function authHeaders(){
-  return token? { "Authorization":"Bearer "+token, "Content-Type":"application/json" } : {"Content-Type":"application/json"};
-}
+function authHeaders(){return token?{"Authorization":"Bearer "+token,"Content-Type":"application/json"}:{"Content-Type":"application/json"};}
+function ymPrev(){const d=new Date();let y=d.getFullYear(),m=d.getMonth();if(m===0){m=12;y--;}return `${y}-${String(m).padStart(2,'0')}`;}
 
-// mês atual YYYY-MM
-function ymNow(){
-  const d = new Date();
-  const m = (d.getMonth()+1).toString().padStart(2,'0');
-  return `${d.getFullYear()}-${m}`;
-}
-
-// mês fechado padrão = mês anterior ao atual (YYYY-MM)
-function ymPrev(){
-  const d = new Date();
-  let y = d.getFullYear();
-  let m = d.getMonth()+1; // 1..12
-  m = m-1;
-  if(m===0){ m=12; y--; }
-  return `${y}-${String(m).padStart(2,'0')}`;
-}
-
-// tenta obter o colaboradorId a partir do payload do login ou dos inputs existentes
-function getColaboradorId(){
-  if (me && typeof me.colaboradorId === 'number') return me.colaboradorId;
-  if (me && typeof me.id === 'number') return me.id;
-  const fallback = document.getElementById('b_colab')?.value || document.getElementById('p_colab')?.value;
-  const n = fallback ? parseInt(fallback, 10) : NaN;
-  return Number.isFinite(n) ? n : null;
+function logout(){
+  token=null;me=null;
+  document.getElementById('me').innerText='';
+  document.getElementById('aceiteMsg').innerText='Faça login para verificar pendências.';
+  document.getElementById('aceiteBtns').style.display='none';
 }
 
 async function login(){
   const email=document.getElementById('email').value.trim();
   const senha=document.getElementById('senha').value.trim();
   const r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,senha})});
-  if(!r.ok){ document.getElementById('me').innerText='Falha no login'; return; }
+  if(!r.ok){document.getElementById('me').innerText='Falha no login';return;}
   const data=await r.json();
-  token=data.token; me=data;
+  token=data.token;me=data;
   document.getElementById('me').innerText=`Logado: ${data.nome} (${data.role})`;
-
-  // competência padrão do aceite = mês anterior
-  document.getElementById('aceite_comp').value = ymPrev();
-
-  // verifica aceite imediatamente
-  try { await checkAceite(); } catch(e) {}
+  document.getElementById('aceite_comp').value=ymPrev();
+  await checkAceite();
 }
 
-function logout(){
-  token=null; me=null;
-  document.getElementById('me').innerText='';
-  document.getElementById('aceiteMsg').innerText='Faça login para verificar pendências.';
-  document.getElementById('aceiteBtns').style.display='none';
-}
+function minutesToHHMM(min){const s=min<0?'-':'';const a=Math.abs(min);const h=Math.floor(a/60).toString().padStart(2,'0');const m=(a%60).toString().padStart(2,'0');return `${s}${h}:${m}`;}
 
-function minutesToHHMM(min){
-  const sign = min<0 ? '-' : '';
-  const abs = Math.abs(min);
-  const h = Math.floor(abs/60).toString().padStart(2,'0');
-  const m = (abs%60).toString().padStart(2,'0');
-  return `${sign}${h}:${m}`;
-}
-
-/* ================== Aceite Mensal ================== */
+function getColaboradorId(){if(me&&typeof me.colaboradorId==='number')return me.colaboradorId;if(me&&typeof me.id==='number')return me.id;const f=document.getElementById('b_colab')?.value||document.getElementById('p_colab')?.value;const n=f?parseInt(f,10):NaN;return Number.isFinite(n)?n:null;}
 
 async function checkAceite(){
-  const msg = document.getElementById('aceiteMsg');
-  const btns = document.getElementById('aceiteBtns');
-  if(!token){ msg.innerText='Faça login para verificar pendências.'; btns.style.display='none'; return; }
-
-  const comp = (document.getElementById('aceite_comp').value || ymPrev()).trim();
-  if(!/^\d{4}-\d{2}$/.test(comp)){ msg.innerText='Competência inválida (use YYYY-MM)'; btns.style.display='none'; return; }
-
-  const colaboradorId = getColaboradorId();
-  if(!colaboradorId){ msg.innerText='Não foi possível identificar seu colaboradorId.'; btns.style.display='none'; return; }
-
+  const msg=document.getElementById('aceiteMsg');const btns=document.getElementById('aceiteBtns');
+  if(!token){msg.innerText='Faça login para verificar pendências.';btns.style.display='none';return;}
+  const comp=(document.getElementById('aceite_comp').value||ymPrev()).trim();
+  const colaboradorId=getColaboradorId();
   try{
-    const r = await fetch(`/assinaturas-mensais/status?colaboradorId=${encodeURIComponent(colaboradorId)}&competencia=${encodeURIComponent(comp)}`, { headers: authHeaders() });
-    if(!r.ok){
-      const t = await r.text();
-      msg.innerText = `Não foi possível consultar o status (${r.status}). ${t||''}`;
-      btns.style.display='none';
-      return;
-    }
-    const j = await r.json();
-    const status = (j.status||'').toUpperCase();
-
-    // pendência do mês anterior (apenas informativo)
-    let pendAnterior = (typeof j.pendenciaAnterior === 'boolean') ? j.pendenciaAnterior : null;
-    if(pendAnterior === null){
-      try {
-        const rp = await fetch(`/assinaturas-mensais/tem-pendencia-anterior?colaboradorId=${encodeURIComponent(colaboradorId)}&competencia=${encodeURIComponent(comp)}`, { headers: authHeaders() });
-        if(rp.ok){
-          const jp = await rp.json();
-          pendAnterior = (typeof jp === 'boolean') ? jp : !!jp.pendenciaAnterior;
-        }
-      } catch(e){}
-    }
-
-    if(status === 'PENDENTE'){
-      // **NÃO bloqueia** mais os botões; apenas informa
-      if(pendAnterior){
-        msg.innerHTML = `Atenção: há pendência no mês anterior.<br><span class="muted">Você ainda pode decidir a competência <b>${comp}</b> para fins de demonstração.</span>`;
-      }else{
-        msg.innerHTML = `Você confirma que leu e concorda com o relatório da competência <b>${comp}</b>?`;
-      }
-      btns.style.display='flex';
-    } else if(status === 'ASSINADO'){
-      msg.innerHTML = `Tudo certo! Relatório de <b>${comp}</b> está <span class="pill ok" style="border:none">ASSINADO</span>.`;
-      btns.style.display='none';
-    } else if(status === 'RECUSADO'){
-      msg.innerHTML = `Relatório de <b>${comp}</b> foi <span class="pill bad" style="border:none">RECUSADO</span>.`;
-      btns.style.display='none';
-    } else {
-      msg.innerText = `Sem pendências de aceite no momento.`;
-      btns.style.display='none';
-    }
-  }catch(e){
-    msg.innerText = 'Erro ao consultar status: '+e;
-    btns.style.display='none';
-  }
+    const r=await fetch(`/assinaturas-mensais/status?colaboradorId=${colaboradorId}&competencia=${comp}`,{headers:authHeaders()});
+    if(!r.ok){msg.innerText=`Erro ${r.status}`;btns.style.display='none';return;}
+    const j=await r.json();const status=(j.status||'').toUpperCase();
+    if(status==='PENDENTE'){msg.innerHTML=`Você confirma que leu e concorda com o relatório da competência <b>${comp}</b>?`;btns.style.display='flex';}
+    else if(status==='ASSINADO'){msg.innerHTML=`Tudo certo! Relatório <b>${comp}</b> <span class="pill ok" style="border:none">ASSINADO</span>`;btns.style.display='none';}
+    else if(status==='RECUSADO'){msg.innerHTML=`Relatório <b>${comp}</b> <span class="pill bad" style="border:none">RECUSADO</span>`;btns.style.display='none';}
+    else{msg.innerText='Sem pendências.';btns.style.display='none';}
+  }catch(e){msg.innerText='Erro ao consultar: '+e;btns.style.display='none';}
 }
 
 async function decidirAceite(aceita){
-  const msg = document.getElementById('aceiteMsg');
-  const btns = document.getElementById('aceiteBtns');
-  if(!token){ alert('Faça login'); return; }
-
-  const comp = (document.getElementById('aceite_comp').value || ymPrev()).trim();
-  const colaboradorId = getColaboradorId();
-  if(!colaboradorId){ msg.innerText='Não foi possível identificar seu colaboradorId.'; return; }
-
+  const msg=document.getElementById('aceiteMsg');const btns=document.getElementById('aceiteBtns');
+  if(!token){alert('Faça login');return;}
+  const comp=(document.getElementById('aceite_comp').value||ymPrev()).trim();
+  const colaboradorId=getColaboradorId();
   try{
-    // backend espera QUERY PARAMS
-    const url = `/assinaturas-mensais/decidir?colaboradorId=${encodeURIComponent(colaboradorId)}&competencia=${encodeURIComponent(comp)}&aceita=${aceita}`;
-    const r = await fetch(url, { method: 'POST', headers: authHeaders() });
-    const t = await r.text();
-    if(r.ok){
-      msg.innerText = aceita ? 'Assinatura registrada com sucesso.' : 'Recusa registrada com sucesso.';
-      btns.style.display='none';
-      // reconsulta status
-      checkAceite();
-    } else {
-      msg.innerText = `Não foi possível registrar decisão (${r.status}): ${t}`;
-    }
-  }catch(e){
-    msg.innerText = 'Erro ao enviar decisão: '+e;
-  }
+    const url=`/assinaturas-mensais/decidir?colaboradorId=${colaboradorId}&competencia=${comp}&aceita=${aceita}`;
+    const r=await fetch(url,{method:'POST',headers:authHeaders()});
+    const t=await r.text();
+    if(r.ok){msg.innerText=aceita?'Assinatura registrada com sucesso.':'Recusa registrada com sucesso.';btns.style.display='none';await checkAceite();}
+    else msg.innerText=`Erro (${r.status}): ${t}`;
+  }catch(e){msg.innerText='Erro ao enviar decisão: '+e;}
 }
-
-/* ================== Batida, Extrato, etc. (seu código original) ================== */
-
-async function baterPonto(){
-  if(!token){ alert('Faça login'); return; }
-  const body={ data: document.getElementById('bp_data').value || null };
-  const wantGeo = document.getElementById('bp_geo').checked;
-  let geo = null;
-  if(wantGeo && navigator.geolocation){
-    try{
-      geo = await new Promise((ok,err)=>navigator.geolocation.getCurrentPosition(p=>ok(p.coords),err,{enableHighAccuracy:true,timeout:4000}));
-    }catch(e){}
-  }
-  if(geo){
-    body.lat = geo.latitude;
-    body.lng = geo.longitude;
-  }
-
-  const res = await fetch('/pontos/bater',{method:'POST',headers:authHeaders(),body:JSON.stringify(body)});
-  const txt = await res.text();
-  document.getElementById('bp_msg').innerText = res.ok ? 'Batida registrada!' : ('Erro '+res.status+': '+txt);
-  try{
-    const r = await fetch(`/pontos/hoje`,{headers:authHeaders()});
-    if(r.ok){
-      const j = await r.json();
-      document.getElementById('kpi-batidas').innerText = `Batidas hoje: ${j.batidas||0}`;
-    }
-  }catch(e){}
-}
-
-async function baterPontoManual(){
-  const body={
-    colaboradorId: +document.getElementById('p_colab').value,
-    data: document.getElementById('p_data').value,
-    horaEntrada: document.getElementById('p_e').value ? document.getElementById('p_e').value+":00" : null,
-    inicioAlmoco: document.getElementById('p_ia').value ? document.getElementById('p_ia').value+":00" : null,
-    fimAlmoco: document.getElementById('p_fa').value ? document.getElementById('p_fa').value+":00" : null,
-    horaSaida: document.getElementById('p_s').value ? document.getElementById('p_s').value+":00" : null,
-    origem: "MANUAL",
-    observacao: "Front"
-  };
-  const r=await fetch('/pontos',{method:'POST',headers:authHeaders(),body:JSON.stringify(body)});
-  document.getElementById('p_msg').innerText = r.ok? 'OK' : 'Erro '+r.status;
-}
-
-async function listarPontos(){
-  const id=+document.getElementById('p_colab').value;
-  const de=new Date(); de.setDate(de.getDate()-7);
-  const ate=new Date();
-  const url=`/pontos?colaboradorId=${id}&de=${de.toISOString().slice(0,10)}&ate=${ate.toISOString().slice(0,10)}`;
-  const r=await fetch(url,{headers:authHeaders()});
-  const arr= r.ok? await r.json(): [];
-  renderTabela('pontosTabela', arr, ['data','horaEntrada','inicioAlmoco','fimAlmoco','horaSaida','origem']);
-}
-
-async function recalcular(){
-  const id=+document.getElementById('b_colab').value;
-  const comp=document.getElementById('b_comp').value;
-  const r=await fetch(`/banco-horas/recalcular?colaboradorId=${id}&competencia=${comp}`,{method:'POST',headers:authHeaders()});
-  const j= await r.json();
-  document.getElementById('b_msg').innerText = r.ok? `Saldo mês: ${j.saldoMinutos} min (${minutesToHHMM(j.saldoMinutos)})` : 'Erro '+r.status;
-}
-
-async function extrato(){
-  const id=+document.getElementById('b_colab').value;
-  const de=document.getElementById('b_de').value;
-  const ate=document.getElementById('b_ate').value;
-  const r=await fetch(`/banco-horas/extrato?colaboradorId=${id}&de=${de}&ate=${ate}`,{headers:authHeaders()});
-  const j= await r.json();
-  renderTabela('extratoTabela', j.dias, ['data','previstoMin','trabalhadoMin','saldoMin']);
-
-  const resumos = document.getElementById('resumos');
-  resumos.innerHTML = `
-    <span class="pill info">Saldo período: ${j.saldoTotalMin} min (${minutesToHHMM(j.saldoTotalMin)})</span>
-    <span class="pill ${j.bancoAcumuladoMin<0?'bad':'ok'}">Banco acumulado: ${j.bancoAcumuladoMin} min (${minutesToHHMM(j.bancoAcumuladoMin)})</span>
-    <span class="pill ok">Saldo de férias: ${j.saldoFeriasDias} dias</span>
-  `;
-
-  document.getElementById('kpi-ferias').innerText = `Férias: ${j.saldoFeriasDias} dias`;
-  document.getElementById('kpi-banco').innerText = `Banco: ${minutesToHHMM(j.bancoAcumuladoMin)}`;
-  document.getElementById('b_msg').innerText = '';
-}
-
-function baixarCSV(){
-  const table = document.querySelector('#extratoTabela table');
-  if(!table){ alert('Faça o extrato primeiro'); return; }
-
-  let csv = 'data,previstoMin,trabalhadoMin,saldoMin\n';
-  table.querySelectorAll('tbody tr').forEach(tr=>{
-    const tds=[...tr.children].map(td=>td.innerText.replaceAll('"','""'));
-    csv += `"${tds[0]}","${tds[1]}","${tds[2]}","${tds[3]}"\n`;
-  });
-
-  const kpis = document.getElementById('resumos').innerText.replace(/\s+/g,' ').trim();
-  csv += `\n"RESUMO","${kpis}","",""\n`;
-
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download='extrato.csv'; a.click();
-}
-
-function renderTabela(containerId, data, cols){
-  const el=document.getElementById(containerId);
-  if(!data || !data.length){ el.innerHTML='<p class="muted">Sem dados.</p>'; return; }
-  const head = '<thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead>';
-  const rows = data.map(o=>{
-    const tds = cols.map(c=>{
-      let v = (o[c]??'');
-      if(['previstoMin','trabalhadoMin','saldoMin'].includes(c)) {
-        const cls = (c==='saldoMin' ? (v<0?'bad-txt':'ok-txt') : '');
-        return `<td class="right ${cls}">${v} (${minutesToHHMM(v)})</td>`;
-      }
-      return `<td>${v}</td>`;
-    }).join('');
-    return `<tr>${tds}</tr>`;
-  }).join('');
-  el.innerHTML = `<table>${head}<tbody>${rows}</tbody></table>`;
-}
-
-/* prepara a UI ao carregar */
-document.getElementById('aceite_comp').value = ymPrev();
 </script>
 </body>
 </html>

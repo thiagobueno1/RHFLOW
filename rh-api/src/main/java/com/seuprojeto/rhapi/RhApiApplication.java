@@ -1,4 +1,4 @@
-package com.seuprojeto.rhapi; // <— MUITO IMPORTANTE: estar no pacote RAIZ
+package com.seuprojeto.rhapi; 
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
