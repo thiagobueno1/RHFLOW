@@ -168,66 +168,471 @@
 </main>
 
 <script>
-let token=null, me=null;
+let token = null, me = null;
 const Z = new Intl.DateTimeFormat('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
 
-function tick(){document.getElementById('relogio').innerText=Z.format(new Date());requestAnimationFrame(()=>setTimeout(tick,800));}
+function tick(){
+  document.getElementById('relogio').innerText = Z.format(new Date());
+  requestAnimationFrame(() => setTimeout(tick, 800));
+}
 tick();
 
-function authHeaders(){return token?{"Authorization":"Bearer "+token,"Content-Type":"application/json"}:{"Content-Type":"application/json"};}
-function ymPrev(){const d=new Date();let y=d.getFullYear(),m=d.getMonth();if(m===0){m=12;y--;}return `${y}-${String(m).padStart(2,'0')}`;}
+function authHeaders(){
+  return token
+    ? { "Authorization": "Bearer " + token, "Content-Type": "application/json" }
+    : { "Content-Type": "application/json" };
+}
+
+function ymPrev(){
+  const d = new Date();
+  let y = d.getFullYear(), m = d.getMonth(); // 0-11
+  if (m === 0) { m = 12; y--; }
+  return `${y}-${String(m).padStart(2,'0')}`;
+}
 
 function logout(){
-  token=null;me=null;
-  document.getElementById('me').innerText='';
-  document.getElementById('aceiteMsg').innerText='Faça login para verificar pendências.';
-  document.getElementById('aceiteBtns').style.display='none';
+  token = null;
+  me = null;
+  document.getElementById('me').innerText = '';
+  document.getElementById('aceiteMsg').innerText = 'Faça login para verificar pendências.';
+  document.getElementById('aceiteBtns').style.display = 'none';
+  document.getElementById('kpi-batidas').innerText = 'Batidas hoje: 0';
+  document.getElementById('kpi-ferias').innerText = 'Férias: -- dias';
+  document.getElementById('kpi-banco').innerText = 'Banco: --';
 }
 
 async function login(){
-  const email=document.getElementById('email').value.trim();
-  const senha=document.getElementById('senha').value.trim();
-  const r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,senha})});
-  if(!r.ok){document.getElementById('me').innerText='Falha no login';return;}
-  const data=await r.json();
-  token=data.token;me=data;
-  document.getElementById('me').innerText=`Logado: ${data.nome} (${data.role})`;
-  document.getElementById('aceite_comp').value=ymPrev();
+  const email = document.getElementById('email').value.trim();
+  const senha = document.getElementById('senha').value.trim();
+  const r = await fetch('/auth/login',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email,senha})
+  });
+  if(!r.ok){
+    document.getElementById('me').innerText='Falha no login';
+    return;
+  }
+  const data = await r.json();
+  token = data.token;
+  me = data;
+  document.getElementById('me').innerText = `Logado: ${data.nome} (${data.role})`;
+  document.getElementById('aceite_comp').value = ymPrev();
   await checkAceite();
+  await carregarStatusHoje();
 }
 
-function minutesToHHMM(min){const s=min<0?'-':'';const a=Math.abs(min);const h=Math.floor(a/60).toString().padStart(2,'0');const m=(a%60).toString().padStart(2,'0');return `${s}${h}:${m}`;}
+function minutesToHHMM(min){
+  const s = min < 0 ? '-' : '';
+  const a = Math.abs(min);
+  const h = Math.floor(a/60).toString().padStart(2,'0');
+  const m = (a%60).toString().padStart(2,'0');
+  return `${s}${h}:${m}`;
+}
 
-function getColaboradorId(){if(me&&typeof me.colaboradorId==='number')return me.colaboradorId;if(me&&typeof me.id==='number')return me.id;const f=document.getElementById('b_colab')?.value||document.getElementById('p_colab')?.value;const n=f?parseInt(f,10):NaN;return Number.isFinite(n)?n:null;}
+function getColaboradorId(){
+  if(me && typeof me.colaboradorId === 'number') return me.colaboradorId;
+  if(me && typeof me.id === 'number') return me.id;
+  const f = (document.getElementById('b_colab')?.value) || (document.getElementById('p_colab')?.value);
+  const n = f ? parseInt(f,10) : NaN;
+  return Number.isFinite(n) ? n : null;
+}
 
 async function checkAceite(){
-  const msg=document.getElementById('aceiteMsg');const btns=document.getElementById('aceiteBtns');
-  if(!token){msg.innerText='Faça login para verificar pendências.';btns.style.display='none';return;}
-  const comp=(document.getElementById('aceite_comp').value||ymPrev()).trim();
-  const colaboradorId=getColaboradorId();
+  const msg = document.getElementById('aceiteMsg');
+  const btns = document.getElementById('aceiteBtns');
+  if(!token){
+    msg.innerText='Faça login para verificar pendências.';
+    btns.style.display='none';
+    return;
+  }
+  const comp = (document.getElementById('aceite_comp').value || ymPrev()).trim();
+  const colaboradorId = getColaboradorId();
   try{
-    const r=await fetch(`/assinaturas-mensais/status?colaboradorId=${colaboradorId}&competencia=${comp}`,{headers:authHeaders()});
-    if(!r.ok){msg.innerText=`Erro ${r.status}`;btns.style.display='none';return;}
-    const j=await r.json();const status=(j.status||'').toUpperCase();
-    if(status==='PENDENTE'){msg.innerHTML=`Você confirma que leu e concorda com o relatório da competência <b>${comp}</b>?`;btns.style.display='flex';}
-    else if(status==='ASSINADO'){msg.innerHTML=`Tudo certo! Relatório <b>${comp}</b> <span class="pill ok" style="border:none">ASSINADO</span>`;btns.style.display='none';}
-    else if(status==='RECUSADO'){msg.innerHTML=`Relatório <b>${comp}</b> <span class="pill bad" style="border:none">RECUSADO</span>`;btns.style.display='none';}
-    else{msg.innerText='Sem pendências.';btns.style.display='none';}
-  }catch(e){msg.innerText='Erro ao consultar: '+e;btns.style.display='none';}
+    const r = await fetch(`/assinaturas-mensais/status?colaboradorId=${colaboradorId}&competencia=${comp}`,{headers:authHeaders()});
+    if(!r.ok){
+      msg.innerText=`Erro ${r.status}`;
+      btns.style.display='none';
+      return;
+    }
+    const j = await r.json();
+    const status = (j.status || '').toUpperCase();
+    if(status==='PENDENTE'){
+      msg.innerHTML = `Você confirma que leu e concorda com o relatório da competência <b>${comp}</b>?`;
+      btns.style.display='flex';
+    }else if(status==='ASSINADO'){
+      msg.innerHTML = `Tudo certo! Relatório <b>${comp}</b> <span class="pill ok" style="border:none">ASSINADO</span>`;
+      btns.style.display='none';
+    }else if(status==='RECUSADO'){
+      msg.innerHTML = `Relatório <b>${comp}</b> <span class="pill bad" style="border:none">RECUSADO</span>`;
+      btns.style.display='none';
+    }else{
+      msg.innerText='Sem pendências.';
+      btns.style.display='none';
+    }
+  }catch(e){
+    msg.innerText='Erro ao consultar: '+e;
+    btns.style.display='none';
+  }
 }
 
 async function decidirAceite(aceita){
-  const msg=document.getElementById('aceiteMsg');const btns=document.getElementById('aceiteBtns');
-  if(!token){alert('Faça login');return;}
-  const comp=(document.getElementById('aceite_comp').value||ymPrev()).trim();
-  const colaboradorId=getColaboradorId();
+  const msg = document.getElementById('aceiteMsg');
+  const btns = document.getElementById('aceiteBtns');
+  if(!token){
+    alert('Faça login');
+    return;
+  }
+  const comp = (document.getElementById('aceite_comp').value || ymPrev()).trim();
+  const colaboradorId = getColaboradorId();
   try{
-    const url=`/assinaturas-mensais/decidir?colaboradorId=${colaboradorId}&competencia=${comp}&aceita=${aceita}`;
-    const r=await fetch(url,{method:'POST',headers:authHeaders()});
-    const t=await r.text();
-    if(r.ok){msg.innerText=aceita?'Assinatura registrada com sucesso.':'Recusa registrada com sucesso.';btns.style.display='none';await checkAceite();}
-    else msg.innerText=`Erro (${r.status}): ${t}`;
-  }catch(e){msg.innerText='Erro ao enviar decisão: '+e;}
+    const url = `/assinaturas-mensais/decidir?colaboradorId=${colaboradorId}&competencia=${comp}&aceita=${aceita}`;
+    const r = await fetch(url,{method:'POST',headers:authHeaders()});
+    const t = await r.text();
+    if(r.ok){
+      msg.innerText = aceita ? 'Assinatura registrada com sucesso.' : 'Recusa registrada com sucesso.';
+      btns.style.display='none';
+      await checkAceite();
+    }else{
+      msg.innerText=`Erro (${r.status}): ${t}`;
+    }
+  }catch(e){
+    msg.innerText='Erro ao enviar decisão: '+e;
+  }
+}
+
+/* ==== NOVAS FUNÇÕES PARA RESTO DO PAINEL ==== */
+
+function requireLogin(){
+  if(!token){
+    alert('Faça login antes de usar esta funcionalidade.');
+    return false;
+  }
+  return true;
+}
+
+// Atualiza KPIs do dia usando /pontos/status-dia
+async function carregarStatusHoje(){
+  if(!token) return;
+  try{
+    const r = await fetch('/pontos/status-dia',{headers:authHeaders()});
+    if(!r.ok) return;
+    const j = await r.json();
+    const batidas = j.batidas ?? 0;
+    const faltam = j.faltam ?? 0;
+    document.getElementById('kpi-batidas').innerText = `Batidas hoje: ${batidas}`;
+    const bancoLabel = document.getElementById('kpi-banco');
+    if(faltam === 0){
+      bancoLabel.innerText = 'Banco: jornada completa hoje';
+    }else{
+      bancoLabel.innerText = `Banco: faltam ${faltam} batida(s) hoje`;
+    }
+  }catch(e){
+    console.error('Erro ao carregar status do dia', e);
+  }
+}
+
+// BOTÃO "BATER PONTO" (usa /pontos/bater)
+async function baterPonto(){
+  if(!requireLogin()) return;
+
+  const msgEl = document.getElementById('bp_msg');
+  msgEl.innerText = 'Registrando ponto...';
+
+  const body = {};
+  const dataVal = document.getElementById('bp_data').value;
+  if(dataVal) body.data = dataVal;
+
+  if(document.getElementById('bp_geo').checked && navigator.geolocation){
+    try{
+      const pos = await new Promise((resolve,reject)=>
+        navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:5000})
+      );
+      body.lat = pos.coords.latitude;
+      body.lng = pos.coords.longitude;
+    }catch(e){
+      console.warn('Não foi possível obter geolocalização:', e);
+    }
+  }
+
+  try{
+    const r = await fetch('/pontos/bater',{
+      method:'POST',
+      headers:authHeaders(),
+      body:JSON.stringify(body)
+    });
+
+    if(!r.ok){
+      const txt = await r.text();
+      msgEl.innerText = `Erro ao bater ponto (${r.status}): ${txt}`;
+      return;
+    }
+
+    const j = await r.json();
+    msgEl.innerText = j.mensagem || 'Ponto registrado com sucesso.';
+    if(typeof j.batidas === 'number'){
+      document.getElementById('kpi-batidas').innerText = `Batidas hoje: ${j.batidas}`;
+    }
+    await carregarStatusHoje();
+  }catch(e){
+    msgEl.innerText = 'Erro ao bater ponto: ' + e;
+  }
+}
+
+// Registro manual: POST /pontos com RegistroPontoCreateDTO
+async function baterPontoManual(){
+  if(!requireLogin()) return;
+
+  const msgEl = document.getElementById('p_msg');
+  msgEl.innerText = 'Enviando...';
+
+  const colaboradorId = parseInt(document.getElementById('p_colab').value,10);
+  const data = document.getElementById('p_data').value;
+  const entrada = document.getElementById('p_e').value;
+  const inicioAlmoco = document.getElementById('p_ia').value;
+  const fimAlmoco = document.getElementById('p_fa').value;
+  const saida = document.getElementById('p_s').value;
+
+  if(!data || !entrada || !saida){
+    msgEl.innerText = 'Preencha pelo menos data, entrada e saída.';
+    return;
+  }
+
+  // garante HH:mm:ss para compatibilidade com LocalTime
+  const toTime = t => t && t.length === 5 ? t + ':00' : t || null;
+
+  const body = {
+    colaboradorId,
+    data,
+    horaEntrada: toTime(entrada),
+    inicioAlmoco: toTime(inicioAlmoco),
+    fimAlmoco: toTime(fimAlmoco),
+    horaSaida: toTime(saida),
+    origem: "WEB",
+    observacao: 'LANÇAMENTO MANUAL VIA PAINEL'
+  };
+
+  try{
+    const r = await fetch('/pontos',{
+      method:'POST',
+      headers:authHeaders(),
+      body:JSON.stringify(body)
+    });
+    const txt = await r.text();
+    if(!r.ok){
+      msgEl.innerText = `Erro (${r.status}): ${txt}`;
+      return;
+    }
+    msgEl.innerText = 'Registro manual salvo com sucesso.';
+  }catch(e){
+    msgEl.innerText = 'Erro ao registrar ponto: ' + e;
+  }
+}
+
+// Listar pontos da semana: GET /pontos?colaboradorId&de&ate
+async function listarPontos(){
+  if(!requireLogin()) return;
+
+  const colaboradorId = parseInt(document.getElementById('p_colab').value,10) || getColaboradorId();
+  const hoje = new Date();
+  const diaSemana = hoje.getDay(); // 0 domingo
+  const diffSegunda = (diaSemana === 0 ? -6 : 1) - diaSemana;
+  const segunda = new Date(hoje);
+  segunda.setDate(hoje.getDate() + diffSegunda);
+
+  const de = segunda.toISOString().substring(0,10);
+  const ate = hoje.toISOString().substring(0,10);
+
+  const container = document.getElementById('pontosTabela');
+  container.innerHTML = '<p class="muted">Carregando lançamentos...</p>';
+
+  try{
+    const params = new URLSearchParams({colaboradorId, de, ate});
+    const r = await fetch(`/pontos?${params.toString()}`,{headers:authHeaders()});
+    if(!r.ok){
+      const txt = await r.text();
+      container.innerHTML = `<p class="muted">Erro (${r.status}): ${txt}</p>`;
+      return;
+    }
+    const dados = await r.json();
+    if(!Array.isArray(dados) || dados.length === 0){
+      container.innerHTML = '<p class="muted">Nenhum registro encontrado no período.</p>';
+      return;
+    }
+
+    let html = '<table><thead><tr><th>Data</th><th>Entrada</th><th>Início Almoço</th><th>Fim Almoço</th><th>Saída</th></tr></thead><tbody>';
+    for(const d of dados){
+      html += `<tr>
+        <td>${d.data || ''}</td>
+        <td>${d.horaEntrada || ''}</td>
+        <td>${d.inicioAlmoco || ''}</td>
+        <td>${d.fimAlmoco || ''}</td>
+        <td>${d.horaSaida || ''}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }catch(e){
+    container.innerHTML = '<p class="muted">Erro ao buscar registros: ' + e + '</p>';
+  }
+}
+
+// Extrato do banco de horas: GET /banco-horas/extrato
+async function extrato(){
+  if(!requireLogin()) return;
+
+  const colaboradorId = getColaboradorId() ?? parseInt(document.getElementById('b_colab').value,10);
+  const competencia = document.getElementById('b_comp').value;
+  let de = document.getElementById('b_de').value;
+  let ate = document.getElementById('b_ate').value;
+
+  // Se não informar período, calcula pelo mês da competência
+  if((!de || !ate)){
+    const base = competencia || new Date().toISOString().substring(0,7); // YYYY-MM
+    const [yStr,mStr] = base.split('-');
+    const y = parseInt(yStr,10);
+    const m = parseInt(mStr,10);
+    if(!isNaN(y) && !isNaN(m)){
+      const first = new Date(y, m-1, 1);
+      const last = new Date(y, m, 0);
+      de = de || first.toISOString().substring(0,10);
+      ate = ate || last.toISOString().substring(0,10);
+    }
+  }
+
+  const msgEl = document.getElementById('b_msg');
+  const resumosEl = document.getElementById('resumos');
+  const tabelaEl = document.getElementById('extratoTabela');
+
+  msgEl.innerText = 'Carregando extrato...';
+  resumosEl.innerHTML = '';
+  tabelaEl.innerHTML = '';
+
+  const params = new URLSearchParams();
+  params.set('colaboradorId', colaboradorId);
+  params.set('de', de);
+  params.set('ate', ate);
+
+  try{
+    const r = await fetch(`/banco-horas/extrato?${params.toString()}`,{
+      headers:authHeaders()
+    });
+    if(!r.ok){
+      const txt = await r.text();
+      msgEl.innerText = `Erro (${r.status}): ${txt}`;
+      return;
+    }
+
+    const dados = await r.json();
+    msgEl.innerText = '';
+
+    const saldoPeriodo = dados.saldoTotalMin ?? 0;
+    const bancoAcumulado = dados.bancoAcumuladoMin ?? saldoPeriodo;
+    const saldoFeriasDias = dados.saldoFeriasDias ?? 0;
+
+    resumosEl.innerHTML = `
+      <span class="pill ok">Saldo período: ${minutesToHHMM(saldoPeriodo)}</span>
+      <span class="pill info">Banco acumulado: ${minutesToHHMM(bancoAcumulado)}</span>
+      <span class="pill warn">Saldo férias: ${saldoFeriasDias} dia(s)</span>
+    `;
+
+    document.getElementById('kpi-ferias').innerText = `Férias: ${saldoFeriasDias} dia(s)`;
+    document.getElementById('kpi-banco').innerText = `Banco: ${minutesToHHMM(bancoAcumulado)}`;
+
+    const dias = dados.dias || [];
+    if(!Array.isArray(dias) || dias.length === 0){
+      tabelaEl.innerHTML = '<p class="muted">Nenhum lançamento no período.</p>';
+      return;
+    }
+
+    const keys = Object.keys(dias[0]);
+    let html = '<table><thead><tr>';
+    for(const k of keys){
+      html += `<th>${k}</th>`;
+    }
+    html += '</tr></thead><tbody>';
+    for(const d of dias){
+      html += '<tr>';
+      for(const k of keys){
+        const v = d[k];
+        html += `<td>${v == null ? '' : v}</td>`;
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    tabelaEl.innerHTML = html;
+  }catch(e){
+    msgEl.innerText = 'Erro ao carregar extrato: ' + e;
+  }
+}
+
+// Gera CSV no front a partir do extrato
+async function baixarCSV(){
+  if(!requireLogin()) return;
+
+  const colaboradorId = getColaboradorId() ?? parseInt(document.getElementById('b_colab').value,10);
+  const competencia = document.getElementById('b_comp').value;
+  let de = document.getElementById('b_de').value;
+  let ate = document.getElementById('b_ate').value;
+
+  if((!de || !ate)){
+    const base = competencia || new Date().toISOString().substring(0,7);
+    const [yStr,mStr] = base.split('-');
+    const y = parseInt(yStr,10);
+    const m = parseInt(mStr,10);
+    if(!isNaN(y) && !isNaN(m)){
+      const first = new Date(y, m-1, 1);
+      const last = new Date(y, m, 0);
+      de = de || first.toISOString().substring(0,10);
+      ate = ate || last.toISOString().substring(0,10);
+    }
+  }
+
+  const params = new URLSearchParams();
+  params.set('colaboradorId', colaboradorId);
+  params.set('de', de);
+  params.set('ate', ate);
+
+  try{
+    const r = await fetch(`/banco-horas/extrato?${params.toString()}`,{
+      headers:authHeaders()
+    });
+    if(!r.ok){
+      const txt = await r.text();
+      alert(`Erro ao gerar CSV (${r.status}): ${txt}`);
+      return;
+    }
+    const dados = await r.json();
+    const dias = dados.dias || [];
+    if(!Array.isArray(dias) || dias.length === 0){
+      alert('Nenhum lançamento no período para gerar CSV.');
+      return;
+    }
+
+    const keys = Object.keys(dias[0]);
+    let csv = keys.join(';') + '\n';
+    for(const d of dias){
+      const row = keys.map(k => {
+        const v = d[k];
+        if(v == null) return '';
+        const s = String(v).replace(/"/g,'""');
+        return `"${s}"`;
+      }).join(';');
+      csv += row + '\n';
+    }
+
+    const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `extrato-banco-horas-${competencia || (de + '_a_' + ate)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }catch(e){
+    alert('Erro ao gerar CSV: ' + e);
+  }
 }
 </script>
 </body>
